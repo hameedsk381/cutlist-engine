@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <library_geometries>
+    <geometry id="shelf-geometry" name="ShelfGeometry">
+      <mesh>
+        <source id="shelf-positions">
+          <float_array id="shelf-positions-array" count="12">0 0 0 720 0 0 720 450 0 0 450 0</float_array>
+        </source>
+        <vertices id="shelf-vertices">
+          <input semantic="POSITION" source="#shelf-positions" />
+        </vertices>
+        <polylist count="1">
+          <input semantic="VERTEX" source="#shelf-vertices" offset="0" />
+          <vcount>4</vcount>
+          <p>0 1 2 3</p>
+        </polylist>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene">
+      <node id="ShelfNode" name="Shelf">
+        <matrix>1 0 0 10 0 1 0 20 0 0 1 30 0 0 0 1</matrix>
+        <instance_geometry url="#shelf-geometry" />
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene" />
+  </scene>
+</COLLADA>

@@ -1,0 +1,23 @@
+; Cutlist Engine G-code
+; Sheet 1 | default | 400.0 x 200.0 mm | parts=1
+; Feed: 2500.0 mm/min  Plunge: 800.0 mm/min  Spindle: 0 RPM
+; Cut depth: 6.0 mm  Pass depth: 6.0 mm  Safe Z: 15.0
+
+G17 G21 G90 G94
+G54
+G0 Z15.000
+G4 P1
+
+; --- panel_001  outer  panel_001  default  rotation=0
+G0 X101.000 Y-1.000
+G0 Z2.000
+G1 Z-6.000 F800
+G1 X101.000 Y101.000 F2500
+G1 X-1.000 Y101.000 F2500
+G1 X-1.000 Y-1.000 F2500
+G1 X101.000 Y-1.000
+G0 Z15.000
+
+G0 Z15.000
+G0 X0 Y0
+M30

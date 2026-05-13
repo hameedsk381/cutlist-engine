@@ -1,0 +1,4 @@
+{
+  "panel_005": { "accepted": false, "reason": "Decorative trim, not a cuttable panel" },
+  "panel_007": { "accepted": true,  "rename": "Drawer front A" }
+}

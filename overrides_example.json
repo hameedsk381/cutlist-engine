@@ -1,0 +1,13 @@
+{
+  "Shelf": {
+    "grain_locked": true,
+    "priority": "visible",
+    "edge_band": [2, 0, 2, 0],
+    "material": "veneer_oak_18",
+    "label": "Top shelf"
+  },
+  "panel_002": {
+    "priority": "hidden",
+    "material": "mdf_18"
+  }
+}

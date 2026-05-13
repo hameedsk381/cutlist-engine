@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pytest_tmp/
+.venv/
+env/
+venv/
+*.stats
+profile.stats
+
+# Node/Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.eslintcache
+
+# Logs and Debug
+*.log
+sessions/
+out_verify/
+temp_123/
+pytest-cache-files-*/
+
+# Large Binaries / OS
+*.iso
+*.skp
+*.obj
+*.exe
+.DS_Store
+Thumbs.db
+
+# Project Specific
+.claude/
+.env
+.env.*
+! .env.example
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo

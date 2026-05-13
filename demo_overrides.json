@@ -1,0 +1,7 @@
+{
+  "panel_001": { "label": "Side panel L", "priority": "visible", "grain_locked": true, "edge_band": [2, 0, 2, 0], "material": "veneer_oak_18" },
+  "panel_002": { "label": "Side panel R", "priority": "visible", "grain_locked": true, "edge_band": [2, 0, 2, 0], "material": "veneer_oak_18" },
+  "panel_003": { "label": "Top",          "priority": "visible", "material": "veneer_oak_18" },
+  "panel_004": { "label": "Back",         "priority": "hidden",  "material": "mdf_18" },
+  "panel_005": { "label": "Bottom",       "priority": "normal",  "material": "mdf_18" }
+}

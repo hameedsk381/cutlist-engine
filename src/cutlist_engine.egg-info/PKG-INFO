@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: cutlist-engine
+Version: 0.1.0
+Summary: CAD-to-cutlist MVP engine for extracting plywood boards and nesting sheet layouts.
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: uvicorn>=0.23.0
+Requires-Dist: python-multipart>=0.0.6
+Provides-Extra: cad
+Requires-Dist: ezdxf>=1.3.0; extra == "cad"

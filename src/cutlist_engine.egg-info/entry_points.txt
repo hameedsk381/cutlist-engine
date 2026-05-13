@@ -1,0 +1,2 @@
+[console_scripts]
+cutlist-engine = cutlist_engine.cli:main

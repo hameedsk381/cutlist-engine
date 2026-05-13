@@ -1,0 +1,5 @@
+{
+  "default":          { "thickness": 18, "sheet_width": 2440, "sheet_height": 1220, "sheet_cost": 55,  "currency": "USD" },
+  "veneer_oak_18":    { "thickness": 18, "sheet_width": 2440, "sheet_height": 1220, "sheet_cost": 145, "currency": "USD", "grain_locked_default": true },
+  "mdf_18":           { "thickness": 18, "sheet_width": 2440, "sheet_height": 1220, "sheet_cost": 38,  "currency": "USD" }
+}
