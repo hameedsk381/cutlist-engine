@@ -51,6 +51,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [quote, setQuote] = useState<QuoteInput | null>(null);
+  const [savedOverrides, setSavedOverrides] = useState<PartOverrides>({});
   const [quoteTotals, setQuoteTotals] = useState<QuoteTotals | null>(null);
   const [loaded, setLoaded] = useState(false);
   const pollRef = useRef<number | null>(null);
@@ -108,6 +109,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       setActive({ id: detail.id, name: detail.name });
       setResult(detail.result);
       setQuote(detail.settings?.quote ?? null);
+      setSavedOverrides(detail.settings?.overrides ?? {});
       setQuoteTotals(detail.quote_totals ?? null);
       setFinalized({
         gated: !!job?.gated,
@@ -202,7 +204,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           startPolling(active.id);
         }
       } catch (err) {
-        setError(friendlyError(err, 'Could not save the edge banding. Try again.'));
+        setError(friendlyError(err, 'Could not save the part settings. Try again.'));
       } finally {
         setBusy(null);
       }
@@ -423,7 +425,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           designNotes={designNotes}
           tools={finalized?.gated ? undefined : (
             <>
-              <EdgeBandingCard key={`band-${active.id}`} result={result} onApply={handleApplyBanding} busy={!!busy} />
+              <EdgeBandingCard key={`band-${active.id}`} result={result} saved={savedOverrides} onApply={handleApplyBanding} busy={!!busy} />
               <QuoteCard key={`quote-${active.id}-${JSON.stringify(quote)}`} result={result} saved={quote} totals={quoteTotals} onSave={handleSaveQuote} busy={!!busy} />
             </>
           )}

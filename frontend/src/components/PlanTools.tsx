@@ -32,11 +32,13 @@ function fromBand(band: number[] | undefined): Choice {
 
 interface BandingProps {
   result: ProcessResult;
+  /** Part settings already saved on the project. Kept as they are unless changed here. */
+  saved?: PartOverrides;
   onApply: (overrides: PartOverrides) => void;
   busy: boolean;
 }
 
-export function EdgeBandingCard({ result, onApply, busy }: BandingProps) {
+export function EdgeBandingCard({ result, saved = {}, onApply, busy }: BandingProps) {
   const boards = useMemo(() => Object.fromEntries(result.boards.map(b => [b.id, b])), [result.boards]);
   const rows = useMemo(
     () => result.cutlist.map(item => {
@@ -49,6 +51,7 @@ export function EdgeBandingCard({ result, onApply, busy }: BandingProps) {
         size: `${Math.round(item.finished_length || item.length)} × ${Math.round(item.finished_width || item.width)}`,
         quantity: item.quantity,
         saved: fromBand(band),
+        grain: !!boards[ids[0]]?.grain_locked,
       };
     }),
     [result.cutlist, boards],
@@ -61,13 +64,24 @@ export function EdgeBandingCard({ result, onApply, busy }: BandingProps) {
   const [tape, setTape] = useState(savedTape);
   const [choices, setChoices] = useState<Record<string, Choice>>(() => Object.fromEntries(rows.map(r => [r.key, r.saved])));
 
-  const dirty = tape !== savedTape ? rows.some(r => choices[r.key] !== 'none') : rows.some(r => choices[r.key] !== r.saved);
+  const [grains, setGrains] = useState<Record<string, boolean>>(() => Object.fromEntries(rows.map(r => [r.key, r.grain])));
+
+  const tapeDirty = tape !== savedTape ? rows.some(r => choices[r.key] !== 'none') : rows.some(r => choices[r.key] !== r.saved);
+  const dirty = tapeDirty || rows.some(r => grains[r.key] !== r.grain);
   const setAll = (choice: Choice) => setChoices(Object.fromEntries(rows.map(r => [r.key, choice])));
+  const setAllGrain = (on: boolean) => setGrains(Object.fromEntries(rows.map(r => [r.key, on])));
   const apply = () => {
-    const overrides: PartOverrides = {};
+    // Start from what is saved: names and other settings must survive a change of tape or grain.
+    const overrides: PartOverrides = Object.fromEntries(Object.entries(saved).map(([id, v]) => [id, { ...v }]));
     rows.forEach(r => {
       const choice = choices[r.key];
-      if (choice !== 'none') r.ids.forEach(id => { overrides[id] = { edge_band: toBand(choice, tape) }; });
+      r.ids.forEach(id => {
+        const entry = { ...(overrides[id] || {}) };
+        if (choice === 'none') delete entry.edge_band; else entry.edge_band = toBand(choice, tape);
+        // Only a grain setting the user changed is pinned; the rest keep following the project and material.
+        if (grains[r.key] !== r.grain) entry.grain_locked = grains[r.key];
+        if (Object.keys(entry).length) overrides[id] = entry; else delete overrides[id];
+      });
     });
     onApply(overrides);
   };
@@ -76,7 +90,7 @@ export function EdgeBandingCard({ result, onApply, busy }: BandingProps) {
 
   return (
     <details className="more card" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-      <summary><Ruler size={18} /> {t('Edge banding')}{banding && banding.total_m > 0 ? ` · ${tf('{metres} m of tape', { metres: banding.total_m })}` : ''}</summary>
+      <summary><Ruler size={18} /> {t('Tape and grain')}{banding && banding.total_m > 0 ? ` · ${tf('{metres} m of tape', { metres: banding.total_m })}` : ''}</summary>
       <div className="stack" style={{ marginTop: 8 }}>
         <p className="small muted">
           {t('Choose which edges get tape. Taped parts are cut smaller by the tape thickness, so they finish at the right size.')}
@@ -89,24 +103,36 @@ export function EdgeBandingCard({ result, onApply, busy }: BandingProps) {
             ))}
           </div>
         </div>
+        <p className="small muted">
+          {t('Grain: a part with its grain locked keeps its length along the sheet and is never turned 90°.')}
+        </p>
         <div className="row">
           <button type="button" className="btn btn-ghost" onClick={() => setAll('front')}>{t('Front edge on all')}</button>
           <button type="button" className="btn btn-ghost" onClick={() => setAll('none')}>{t('Clear all')}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setAllGrain(true)}>{t('Grain on all')}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setAllGrain(false)}>{t('Grain off on all')}</button>
         </div>
         <div className="band-list">
           {rows.map(r => (
-            <label key={r.key} className="band-row">
+            <div key={r.key} className="band-row">
               <span>
                 <strong>{r.quantity} × {r.label}</strong>
                 <span className="small muted num"> {r.size}</span>
+                <label className="grain-toggle small">
+                  <input
+                    type="checkbox" checked={grains[r.key] ?? false}
+                    onChange={e => setGrains(g => ({ ...g, [r.key]: e.target.checked }))}
+                  />
+                  {t('Lock the grain')}
+                </label>
               </span>
               <select
-                className="input" value={choices[r.key]}
+                className="input" value={choices[r.key]} aria-label={`${t('Tape')}: ${r.label}`}
                 onChange={e => setChoices(c => ({ ...c, [r.key]: e.target.value as Choice }))}
               >
                 {CHOICES.map(c => <option key={c.value} value={c.value}>{t(c.label)}</option>)}
               </select>
-            </label>
+            </div>
           ))}
         </div>
         {banding && banding.total_m > 0 && (

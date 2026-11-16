@@ -384,7 +384,7 @@ details.more > summary svg { transition: transform 150ms ease; }
 .stat-sub { color: var(--text-2); font-size: 13px; margin-top: 2px; }
 
 .result-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 960px) { .result-grid { grid-template-columns: 1fr; } }
+@media (max-width: 960px) { .result-grid { grid-template-columns: minmax(0, 1fr); } }  /* 1fr would grow to fit the sheet tabs */
 
 .sheet-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .sheet-view { display: flex; flex-direction: column; gap: 10px; }
@@ -520,6 +520,7 @@ table.cut .qty { font-weight: 800; font-size: 17px; }
 
 .band-list { display: flex; flex-direction: column; gap: 8px; }
 .band-row { display: grid; grid-template-columns: 1fr minmax(150px, 46%); gap: 10px; align-items: center; }
+.grain-toggle { display: flex; align-items: center; gap: 8px; min-height: 36px; margin-top: 2px; cursor: pointer; color: var(--text-2); }
 .band-row .input { min-height: 44px; padding: 6px 10px; font-size: 15px; }
 .quote-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .quote-grid .input-row .input { max-width: none; }
