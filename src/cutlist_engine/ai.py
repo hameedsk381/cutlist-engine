@@ -118,7 +118,15 @@ def _complete(
     except Exception as exc:  # noqa: BLE001 - provider errors vary by SDK version
         logger.error("AI request failed (%s): %s", kwargs["model"], exc)
         raise AIError("The AI service did not answer. Try again in a moment.") from exc
-    return resp.choices[0].message.content or ""
+    choice = resp.choices[0]
+    content = choice.message.content or ""
+    if not content.strip():
+        # Without this a blank answer looks like "the AI understood nothing".
+        logger.warning(
+            "AI answer was empty (model=%s, finish_reason=%s, max_tokens=%s)",
+            kwargs["model"], getattr(choice, "finish_reason", "?"), max_tokens,
+        )
+    return content
 
 
 def _loads(content: str) -> dict[str, Any]:

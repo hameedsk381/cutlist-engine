@@ -420,3 +420,10 @@ def test_assistant_route_renames_the_part_the_user_named(client, provider):  # n
     assert set(proposal["overrides"]) == set(target["board_ids"])
     assert all(v == {"label": "Shelf Side Panel"} or v["label"].startswith("Shelf Side Panel")
                for v in proposal["overrides"].values())
+
+
+def test_empty_answer_is_logged_not_silent(provider, caplog):
+    provider("")
+    with caplog.at_level("WARNING"):
+        assert ai.extract_furniture_params("wardrobe") == {}
+    assert "AI answer was empty" in caplog.text
