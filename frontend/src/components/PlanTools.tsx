@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { t, tf } from '../i18n';
-import { ChevronRight, Receipt, Ruler } from 'lucide-react';
+import { ChevronRight, FileDown, LoaderCircle, Receipt, Ruler } from 'lucide-react';
 import { tidyName } from '../format';
+import { downloadQuotePdf, friendlyError } from '../api';
 import type { PartOverrides, ProcessResult, QuoteInput, QuoteTotals } from '../types';
 
 type Choice = 'none' | 'front' | 'long' | 'all';
@@ -156,12 +157,30 @@ interface QuoteProps {
   totals: QuoteTotals | null;
   onSave: (quote: QuoteInput | null) => void;
   busy: boolean;
+  /** Needed to download the PDF quote. */
+  projectId?: number;
+  projectName?: string;
 }
 
 const EMPTY: QuoteInput = { labour: 0, hardware: 0, other: 0, edge_band_rate: 0, margin_percent: 0, customer: '', note: '' };
 
-export function QuoteCard({ result, saved, totals, onSave, busy }: QuoteProps) {
+export function QuoteCard({ result, saved, totals, onSave, busy, projectId, projectName = 'quote' }: QuoteProps) {
   const [quote, setQuote] = useState<QuoteInput>(saved || EMPTY);
+  const [withParts, setWithParts] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const modelHasProblems = result.model_problems?.severity === 'medium' || result.model_problems?.severity === 'high';
+  const makePdf = async () => {
+    if (projectId === undefined) return;
+    setPdfBusy(true); setPdfError(null);
+    try {
+      await downloadQuotePdf(projectId, projectName, withParts);
+    } catch (err) {
+      setPdfError(friendlyError(err, 'Could not make the PDF. Try again.'));
+    } finally {
+      setPdfBusy(false);
+    }
+  };
   const [open, setOpen] = useState(!!totals);
   const currency = result.material_summary.currency || 'INR';
   const money = (v: number) =>
@@ -231,6 +250,24 @@ export function QuoteCard({ result, saved, totals, onSave, busy }: QuoteProps) {
           {saved && <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => { setQuote(EMPTY); onSave(null); }}>{t('Remove')}</button>}
         </div>
         {totals && <p className="small muted">{t('Saved. Share the project link to send it.')}</p>}
+
+        {totals && projectId !== undefined && (
+          <div className="stack" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <strong>{t('PDF quote for your client')}</strong>
+            <p className="small muted">{t('Carries your studio name, logo and terms. Your costs and margin are not shown.')}</p>
+            {modelHasProblems && (
+              <p className="small" style={{ color: 'var(--warn)' }}>{t('This 3D model has problems that affect the plan. Check it before you send a price.')}</p>
+            )}
+            <label className="grain-toggle">
+              <input type="checkbox" checked={withParts} onChange={e => setWithParts(e.target.checked)} />
+              {t('Include the parts list')}
+            </label>
+            {pdfError && <div className="notice notice-danger" role="alert">{pdfError}</div>}
+            <button type="button" className="btn btn-primary" disabled={busy || pdfBusy} onClick={() => void makePdf()} style={{ alignSelf: 'flex-start' }}>
+              {pdfBusy ? <><LoaderCircle size={18} className="spinner" /> {t('Working…')}</> : <><FileDown size={18} /> {t('Download PDF quote')}</>}
+            </button>
+          </div>
+        )}
       </div>
     </details>
   );

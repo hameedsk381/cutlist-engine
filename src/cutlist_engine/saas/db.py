@@ -52,6 +52,7 @@ def _ensure_columns() -> None:
         "users": [
             "email_verified BOOLEAN NOT NULL DEFAULT 0",
             "verification_token VARCHAR(128)",
+            "brand_json TEXT",
         ],
         "projects": [
             "share_token VARCHAR(64)",

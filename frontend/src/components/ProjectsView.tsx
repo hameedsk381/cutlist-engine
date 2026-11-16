@@ -10,6 +10,7 @@ import LanguageSwitch from './LanguageSwitch';
 import LinearView from './LinearView';
 import ChatDrawer from './ChatDrawer';
 import { EdgeBandingCard, QuoteCard } from './PlanTools';
+import BrandCard from './BrandCard';
 import {
   aiAvailable, artifactDownloadUrl, askAssistant, createApiKey, createProject, createProjectFromDescription, deleteAccount, deleteOffcut, deleteProject, updateProjectSettings, friendlyError, getProject,
   listApiKeys, listOffcuts, listProjects, rerunProject, resendVerification, revokeApiKey,
@@ -452,7 +453,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           tools={finalized?.gated ? undefined : (
             <>
               <EdgeBandingCard key={`band-${active.id}`} result={result} saved={savedOverrides} onApply={handleApplyBanding} busy={!!busy} />
-              <QuoteCard key={`quote-${active.id}-${JSON.stringify(quote)}`} result={result} saved={quote} totals={quoteTotals} onSave={handleSaveQuote} busy={!!busy} />
+              <QuoteCard key={`quote-${active.id}-${JSON.stringify(quote)}`} result={result} saved={quote} totals={quoteTotals} onSave={handleSaveQuote} busy={!!busy} projectId={active.id} projectName={active.name} />
+              <BrandCard />
             </>
           )}
           onForce={() => handleRerun(active.id)}

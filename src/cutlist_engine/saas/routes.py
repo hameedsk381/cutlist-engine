@@ -19,6 +19,7 @@ from . import emailer
 from .models import ApiKey, Job, OffcutStock, Project, User
 from .queue import enqueue
 from .quote import normalise_quote, quote_totals
+from .brand import brand_dir
 from .ratelimit import limit
 from .security import (
     create_access_token,
@@ -140,6 +141,9 @@ def delete_account(
     db.query(OffcutStock).filter(OffcutStock.user_id == user.id).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
+    import shutil
+
+    shutil.rmtree(brand_dir(user.id), ignore_errors=True)
     return {"deleted": True}
 
 

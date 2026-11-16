@@ -1,4 +1,4 @@
-import type { AssistantAnswer, LinearPlan, PartOverrides, QuoteInput } from './types';
+import type { AssistantAnswer, BrandProfile, LinearPlan, PartOverrides, QuoteInput } from './types';
 import axios from 'axios';
 import type {
   ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions,
@@ -301,6 +301,61 @@ export async function updateProjectSettings(
 ): Promise<{ project: SaaSProjectDetail; rerun: boolean; job_id: number | null }> {
   const r = await api.put(`/api/projects/${id}/settings`, body);
   return r.data;
+}
+
+export async function getBrand(): Promise<BrandProfile> {
+  return (await api.get('/api/brand')).data;
+}
+
+export async function saveBrand(brand: Partial<BrandProfile>): Promise<BrandProfile> {
+  return (await api.put('/api/brand', brand)).data;
+}
+
+export async function uploadLogo(file: File): Promise<BrandProfile> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return (await api.post('/api/brand/logo', fd)).data;
+}
+
+export async function deleteLogo(): Promise<BrandProfile> {
+  return (await api.delete('/api/brand/logo')).data;
+}
+
+/** The saved logo as a temporary address for an <img>, or null when there is none. */
+export async function logoPreviewUrl(): Promise<string | null> {
+  try {
+    const r = await api.get('/api/brand/logo', { responseType: 'blob' });
+    return URL.createObjectURL(r.data as Blob);
+  } catch {
+    return null;
+  }
+}
+
+/** Download the client's quote as a PDF. The server explains why in plain words when it cannot make it. */
+export async function downloadQuotePdf(projectId: number, name: string, withParts: boolean): Promise<void> {
+  try {
+    const r = await api.get(`/api/projects/${projectId}/quote.pdf`, { params: { parts: withParts }, responseType: 'blob' });
+    const blobUrl = URL.createObjectURL(r.data as Blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `${name.replace(/[^A-Za-z0-9._-]+/g, '-') || 'quote'}-quote.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+  } catch (err) {
+    // A failed PDF request comes back as a blob; read the sentence out of it.
+    const data = (err as { response?: { data?: unknown } })?.response?.data;
+    if (data instanceof Blob) {
+      try {
+        const detail = JSON.parse(await data.text())?.detail;
+        if (typeof detail === 'string') throw new Error(detail, { cause: err });
+      } catch (inner) {
+        if (inner instanceof Error && inner.message) throw inner;
+      }
+    }
+    throw err;
+  }
 }
 
 export async function linearNest(payload: Record<string, unknown>): Promise<LinearPlan> {

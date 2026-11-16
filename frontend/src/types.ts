@@ -243,6 +243,22 @@ export interface QuoteInput {
   note: string;
 }
 
+/** Studio details printed on the client's PDF quote. */
+export interface BrandProfile {
+  studio_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  tax_id: string;
+  tax_name: string;
+  tax_percent: number;
+  validity_days: number;
+  terms: string;
+  accent: string;
+  show_breakdown: boolean;
+  has_logo: boolean;
+}
+
 export interface QuoteTotals {
   currency: string;
   material: number;

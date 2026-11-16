@@ -78,6 +78,17 @@ Use the main page for quick extraction and layout review.
 
 The quick page is best for estimates and fast visual checks. Use the operator review workflow before cutting real stock.
 
+### PDF quote for your client
+
+Open **Quote for your customer**, fill in labour, hardware, margin and the customer's name, and press **Save quote**. Then press **Download PDF quote**. The PDF has your studio name, logo, contact details, GST number and terms at the top, the customer's name, the price, what it covers, and your notes.
+
+- **Your costs and margin never appear.** With **Show a price breakdown** on, the price is split into material, hardware and labour lines, with your margin spread across them so the lines add up to the total.
+- Set your studio details once under **Your studio details for quotes**: logo (PNG or JPEG, under 1 MB), name, phone, email, address, GST number and rate, how long the quote is valid, an accent colour and your terms. GST is added on top of the price and shown as its own line.
+- Tick **Include the parts list** to add the cut list at the end.
+- Amounts are in whole rupees with Indian grouping (12,34,567).
+- **Write names and notes in English letters.** The PDF cannot print Hindi yet; if the customer name or a note has Hindi letters the download stops and says which field.
+- If the 3D model has problems, a warning sits above the button. Fix them before you send a price.
+
 ### Problems with the 3D model
 
 When the model behind a plan has real problems, a warning card sits at the top of the plan page, before the numbers. The software measures each problem itself: parts bigger than the sheet, many solids that are not flat panels (handles, legs, decoration), too many different thicknesses, sheets that are mostly empty, many sizes rebuilt from loose faces, and a failed confidence check. Each comes with the numbers found and how to fix it.

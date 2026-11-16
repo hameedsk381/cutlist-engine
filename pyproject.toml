@@ -9,7 +9,9 @@ dependencies = [
     "python-multipart>=0.0.6",
     "sqlalchemy>=2.0",
     "pyjwt>=2.8",
-    "bcrypt>=4.0"
+    "bcrypt>=4.0",
+    "reportlab>=5.0",
+    "pillow>=10.0"
 ]
 
 [project.optional-dependencies]

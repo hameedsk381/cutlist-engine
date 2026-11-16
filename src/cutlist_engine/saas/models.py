@@ -23,6 +23,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     verification_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    brand_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Studio details printed on client quotes (see brand.py)."""
 
     projects: Mapped[list["Project"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

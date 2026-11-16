@@ -32,6 +32,9 @@ Tick each line before you open sign-ups.
 
 ## Known gaps
 
+- The PDF quote prints English letters only and shows amounts as `INR 12,34,567`, not with the rupee sign.
+  A customer name or note in Hindi stops the download with a message. Printing Hindi needs a shaping-capable
+  PDF engine and a bundled font. The Docker build was not run here; check that `reportlab` and `pillow` install.
 - The Content-Security-Policy was checked on the plan, share, legal and upload pages without violations, but not
   against Google Fonts loading from the live site or the voice and sketch buttons. After deploying, open the browser
   console on each main screen; set `CUTLIST_CSP=report-only` if anything is blocked.
