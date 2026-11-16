@@ -44,12 +44,19 @@ projects, and a DB-backed async job queue with a separate worker process.
 | Route | What |
 |---|---|
 | `POST /auth/signup` · `POST /auth/login` | email + password → JWT |
-| `GET  /auth/me` | current account |
+| `GET  /auth/me` | current account (incl. `email_verified`) |
+| `GET  /auth/verify/{token}` · `POST /auth/resend-verification` | email confirmation (non-blocking; logs the link when SMTP is unset) |
+| `POST /auth/api-keys` · `GET /auth/api-keys` · `DELETE /auth/api-keys/{id}` | API keys for CNC shops (`ckl_…`, sha256-hashed, shown once) |
 | `POST /api/projects` | upload model + config → project + queued job |
 | `GET  /api/projects` | list your projects (with latest job status) |
 | `GET  /api/projects/{id}` | project detail incl. result + artifacts when done |
 | `POST /api/projects/{id}/jobs` | re-run processing |
+| `POST /api/projects/{id}/share` · `DELETE …/share` | create / revoke a public read-only quote link |
+| `GET  /share/{token}` | public, printable cutting-plan page (no auth, no JS) |
 | `GET  /api/projects/{id}/download/{file}` | download any artifact (auth-scoped) |
+
+API keys authenticate like sessions: `Authorization: Bearer ckl_…` works on
+every project route, so shop software can pull plans without a browser.
 
 Run it:
 
@@ -65,7 +72,10 @@ docker compose up -d --build
 Key env vars: `CUTLIST_DATABASE_URL` (SQLite default / Postgres in compose),
 `CUTLIST_JWT_SECRET` (**required in production**), `CUTLIST_STORAGE_DIR`,
 `CUTLIST_MONTHLY_JOB_LIMIT` (free-plan quota; billing via Razorpay is the
-next milestone). The worker requeues jobs left `processing` by a crashed run.
+next milestone), `CUTLIST_SMTP_HOST`/`CUTLIST_SMTP_PORT`/`CUTLIST_SMTP_USER`/
+`CUTLIST_SMTP_PASSWORD`/`CUTLIST_SMTP_FROM` (verification email; without them
+the link is logged instead), and `CUTLIST_APP_URL` (public base URL used in
+email links). The worker requeues jobs left `processing` by a crashed run.
 
 ## Run
 

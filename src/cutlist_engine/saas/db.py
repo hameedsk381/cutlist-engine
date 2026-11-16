@@ -35,7 +35,38 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
-    """Create tables. M1 ships without Alembic; add migrations before v1.0."""
+    """Create tables and add columns added after M1 (no Alembic yet)."""
     from . import models  # noqa: F401  (register models on Base)
 
     Base.metadata.create_all(engine)
+    _ensure_columns()
+
+
+def _ensure_columns() -> None:
+    """Lightweight ALTERs for databases created by earlier versions.
+
+    create_all() never alters existing tables, so M3 columns must be added
+    explicitly. Works on SQLite and Postgres alike.
+    """
+    wanted: dict[str, list[str]] = {
+        "users": [
+            "email_verified BOOLEAN NOT NULL DEFAULT 0",
+            "verification_token VARCHAR(128)",
+        ],
+        "projects": [
+            "share_token VARCHAR(64)",
+        ],
+    }
+    with engine.connect() as conn:
+        from sqlalchemy import inspect
+
+        existing_by_table = inspect(conn).get_table_names()
+        for table, columns in wanted.items():
+            if table not in existing_by_table:
+                continue  # fresh DB — create_all already made everything
+            existing = {c["name"] for c in inspect(conn).get_columns(table)}
+            for col in columns:
+                name = col.split()[0]
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col}")
+        conn.commit()

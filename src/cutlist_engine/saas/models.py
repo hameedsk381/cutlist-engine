@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -21,8 +21,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     plan: Mapped[str] = mapped_column(String(32), default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     projects: Mapped[list["Project"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    api_keys: Mapped[list["ApiKey"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -40,6 +45,8 @@ class Project(Base):
     config_json: Mapped[str] = mapped_column(Text, default="{}")
     """ProcessConfig kwargs as JSON (sheet size, kerf, confidence...)."""
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    share_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    """Public token for the shareable quote page (read-only)."""
 
     user: Mapped[User] = relationship(back_populates="projects")
     jobs: Mapped[list["Job"]] = relationship(
@@ -65,3 +72,19 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     project: Mapped[Project] = relationship(back_populates="jobs")
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120), default="API key")
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    """sha256 hex of the full key — the raw key is never stored."""
+    key_prefix: Mapped[str] = mapped_column(String(16))
+    """First characters (e.g. 'ckl_a1b2') shown in the dashboard."""
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="api_keys")

@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ChevronLeft, Clock, FileText, FolderOpen, LoaderCircle, LogOut,
-  Plus, RotateCcw, TriangleAlert,
+  ChevronLeft, Check, Clock, Copy, FileText, FolderOpen, KeyRound,
+  LoaderCircle, LogOut, MailWarning, Plus, RotateCcw, Share2, Trash2, TriangleAlert,
 } from 'lucide-react';
 import UploadView from './UploadView';
 import Dashboard from './Dashboard';
 import {
-  artifactDownloadUrl, createProject, friendlyError, getProject,
-  listProjects, rerunProject,
+  artifactDownloadUrl, createApiKey, createProject, friendlyError, getProject,
+  listApiKeys, listProjects, rerunProject, resendVerification, revokeApiKey,
+  shareProject,
 } from '../api';
-import type { FinalizeResult, ProcessConfig, ProcessResult, SaaSJob, SaaSProject, SaaSUser } from '../types';
+import type {
+  FinalizeResult, ProcessConfig, ProcessResult, SaaSApiKey, SaaSApiKeyCreated,
+  SaaSJob, SaaSProject, SaaSUser,
+} from '../types';
 
 interface Props {
   user: SaaSUser;
@@ -35,7 +39,15 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   const [finalized, setFinalized] = useState<FinalizeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  // --- M3: verification banner, share links, API keys ----------------------
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const [apiKeys, setApiKeys] = useState<SaaSApiKey[]>([]);
+  const [newKey, setNewKey] = useState<SaaSApiKeyCreated | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -51,6 +63,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       setProjects(await listProjects());
     } catch (err) {
       setError(friendlyError(err, 'Could not load your projects.'));
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -145,6 +159,74 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     void refreshList();
   };
 
+  const handleResendVerification = async () => {
+    setBusy('Sending the verification email…');
+    setError(null);
+    try {
+      const r = await resendVerification();
+      setNotice(r.verified
+        ? 'Your email is already verified.'
+        : 'Verification email sent — check your inbox (and spam).');
+    } catch (err) {
+      setError(friendlyError(err, 'Could not send the email right now — try again later.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleShare = async (projectId: number) => {
+    setError(null);
+    try {
+      const { share_url } = await shareProject(projectId);
+      const full = `${window.location.origin}${share_url}`;
+      try {
+        await navigator.clipboard.writeText(full);
+        setNotice(`Share link copied to clipboard: ${full}`);
+      } catch {
+        setNotice(`Anyone with this link can view the plan: ${full}`);
+      }
+    } catch (err) {
+      setError(friendlyError(err, 'Could not create the share link.'));
+    }
+  };
+
+  const refreshKeys = useCallback(async () => {
+    try {
+      setApiKeys(await listApiKeys());
+    } catch {
+      /* banner-level error already covers auth problems */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (keysOpen) void refreshKeys();
+  }, [keysOpen, refreshKeys]);
+
+  const handleCreateKey = async () => {
+    setBusy('Creating API key…');
+    setError(null);
+    try {
+      const key = await createApiKey(`Key ${apiKeys.length + 1}`);
+      setNewKey(key);
+      await refreshKeys();
+    } catch (err) {
+      setError(friendlyError(err, 'Could not create the API key.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRevokeKey = async (id: number) => {
+    setError(null);
+    try {
+      await revokeApiKey(id);
+      if (newKey?.id === id) setNewKey(null);
+      await refreshKeys();
+    } catch (err) {
+      setError(friendlyError(err, 'Could not revoke the key.'));
+    }
+  };
+
   if (stage === 'new') {
     return (
       <main className="page">
@@ -223,8 +305,29 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       </div>
 
       {error && <div className="notice notice-danger"><TriangleAlert size={20} /> {error}</div>}
+      {notice && (
+        <div className="notice notice-info" role="status">
+          <Check size={20} /> <span className="share-notice-text">{notice}</span>
+          <button type="button" className="linklike" onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
+      {!user.email_verified && !bannerDismissed && (
+        <div className="notice notice-warn">
+          <MailWarning size={20} />
+          <span>
+            Verify your email so you can recover your account.
+            We sent a link to <strong>{user.email}</strong>.
+          </span>
+          <button type="button" className="linklike" onClick={handleResendVerification} disabled={!!busy}>
+            Resend email
+          </button>
+          <button type="button" className="linklike muted" onClick={() => setBannerDismissed(true)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
-      {projects.length === 0 ? (
+      {projects.length === 0 && loaded ? (
         <section className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
           <FolderOpen size={40} style={{ color: 'var(--text-2)' }} />
           <h2 style={{ marginTop: 12 }}>No projects yet</h2>
@@ -234,6 +337,10 @@ export default function ProjectsView({ user, onSignOut }: Props) {
             <Plus size={18} /> New project
           </button>
         </section>
+      ) : projects.length === 0 ? (
+        <div className="row" style={{ justifyContent: 'center', padding: '40px 0' }}>
+          <LoaderCircle size={28} className="spinner" style={{ color: 'var(--primary)' }} />
+        </div>
       ) : (
         <div className="stack">
           {projects.map((p) => (
@@ -251,9 +358,14 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                 <div className="spacer" />
                 {statusTag(p.job?.status ?? 'queued')}
                 {p.job?.status === 'done' && (
-                  <button type="button" className="btn" onClick={() => openDashboard(p.id, p.job)}>
-                    Open plan
-                  </button>
+                  <>
+                    <button type="button" className="btn" onClick={() => handleShare(p.id)} aria-label="Copy share link">
+                      <Share2 size={16} /> Share
+                    </button>
+                    <button type="button" className="btn" onClick={() => openDashboard(p.id, p.job)}>
+                      Open plan
+                    </button>
+                  </>
                 )}
                 {(p.job?.status === 'done' || p.job?.status === 'failed') && (
                   <button type="button" className="btn" onClick={() => handleRerun(p.id)} aria-label="Run again">
@@ -268,6 +380,67 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           ))}
         </div>
       )}
+
+      {/* ---- API keys (programmatic access for CNC shops) ---- */}
+      <section className="card keys-panel">
+        <div className="row">
+          <KeyRound size={20} style={{ color: 'var(--text-2)' }} />
+          <h2 style={{ margin: 0 }}>API keys</h2>
+          <span className="muted small">Let your CNC software pull plans on its own</span>
+          <div className="spacer" />
+          <button type="button" className="btn" onClick={() => setKeysOpen(!keysOpen)}>
+            {keysOpen ? 'Hide' : 'Manage'}
+          </button>
+        </div>
+        {keysOpen && (
+          <div className="stack" style={{ marginTop: 16 }}>
+            {newKey && (
+              <div className="notice notice-warn key-reveal">
+                <div>
+                  <strong>Copy your new key now — it will not be shown again:</strong>
+                  <code className="key-code">{newKey.key}</code>
+                </div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(newKey.key); setNotice('API key copied to clipboard.'); } catch { /* clipboard blocked */ }
+                  }}
+                >
+                  <Copy size={16} /> Copy
+                </button>
+              </div>
+            )}
+            {apiKeys.length === 0 && !newKey ? (
+              <p className="muted small">No keys yet. A key lets scripts and CNC software call the CutList API without your password.</p>
+            ) : (
+              <table className="keys-table">
+                <thead>
+                  <tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th /></tr>
+                </thead>
+                <tbody>
+                  {apiKeys.map((k) => (
+                    <tr key={k.id}>
+                      <td>{k.name}</td>
+                      <td><code>{k.key_prefix}…</code></td>
+                      <td>{k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}</td>
+                      <td>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
+                      <td>
+                        <button type="button" className="btn" onClick={() => handleRevokeKey(k.id)} aria-label={`Revoke ${k.name}`}>
+                          <Trash2 size={16} /> Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <button type="button" className="btn btn-primary" onClick={handleCreateKey} disabled={!!busy} style={{ alignSelf: 'flex-start' }}>
+              <Plus size={18} /> Create API key
+            </button>
+          </div>
+        )}
+      </section>
     </main>
   );
 }

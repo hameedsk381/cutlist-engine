@@ -4,24 +4,29 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..parsers import load_model
 from ..pipeline import ProcessConfig
-from .models import Job, Project, User
+from . import emailer
+from .models import ApiKey, Job, Project, User
 from .queue import enqueue
 from .security import (
     create_access_token,
+    generate_api_key,
     get_current_user,
     get_db,
     hash_password,
     verify_password,
 )
+from .share_page import render_share_page
 from .storage import ALLOWED_SUFFIXES, safe_resolve, save_model
 
 router = APIRouter()
@@ -38,7 +43,20 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # ---------------------------------------------------------------------------
 
 def _user_payload(user: User) -> dict:
-    return {"id": user.id, "email": user.email, "plan": user.plan}
+    return {
+        "id": user.id,
+        "email": user.email,
+        "plan": user.plan,
+        "email_verified": bool(user.email_verified),
+    }
+
+
+def _issue_verification(user: User, db: Session) -> None:
+    """Create (or replace) a verification token and email the link."""
+    token = secrets.token_urlsafe(32)
+    user.verification_token = token
+    db.commit()
+    emailer.send_verification_email(user.email, token)
 
 
 @router.post("/auth/signup", status_code=201)
@@ -54,6 +72,10 @@ def signup(email: str = Form(...), password: str = Form(...), db: Session = Depe
     db.add(user)
     db.commit()
     db.refresh(user)
+    try:
+        _issue_verification(user, db)
+    except Exception:  # never block signup on email problems
+        pass
     return {"token": create_access_token(user.id), "user": _user_payload(user)}
 
 
@@ -68,6 +90,139 @@ def login(email: str = Form(...), password: str = Form(...), db: Session = Depen
 @router.get("/auth/me")
 def me(user: User = Depends(get_current_user)):
     return _user_payload(user)
+
+
+@router.get("/auth/verify/{token}")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.verification_token == token).first()
+    if user is None:
+        return HTMLResponse(
+            "<body style='font-family:sans-serif;text-align:center;padding:60px'>"
+            "<h2>Link invalid or already used</h2>"
+            "<p><a href='/'>Back to CutList</a></p></body>", status_code=400,
+        )
+    user.email_verified = True
+    user.verification_token = None
+    db.commit()
+    return HTMLResponse(
+        "<body style='font-family:sans-serif;text-align:center;padding:60px'>"
+        "<h2 style='color:#0e5c4a'>✔ Email verified</h2>"
+        "<p>Your account is confirmed. <a href='/'>Open CutList</a></p></body>",
+    )
+
+
+@router.post("/auth/resend-verification")
+def resend_verification(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.email_verified:
+        return {"verified": True}
+    try:
+        _issue_verification(user, db)
+    except Exception as exc:
+        raise HTTPException(503, "Could not send the email right now — try again later") from exc
+    return {"verified": False, "sent": True}
+
+
+# ---------------------------------------------------------------------------
+# API keys (programmatic access for CNC shops)
+# ---------------------------------------------------------------------------
+
+@router.post("/auth/api-keys", status_code=201)
+def create_api_key(name: str = Form("API key"), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    raw, key_hash, key_prefix = generate_api_key()
+    key = ApiKey(user_id=user.id, name=name.strip() or "API key", key_hash=key_hash, key_prefix=key_prefix)
+    db.add(key)
+    db.commit()
+    db.refresh(key)
+    return {
+        "id": key.id,
+        "name": key.name,
+        "key_prefix": key.key_prefix,
+        "key": raw,  # shown exactly once
+        "created_at": key.created_at.isoformat() if key.created_at else None,
+    }
+
+
+@router.get("/auth/api-keys")
+def list_api_keys(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    keys = (
+        db.query(ApiKey)
+        .filter(ApiKey.user_id == user.id)
+        .order_by(ApiKey.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": k.id,
+            "name": k.name,
+            "key_prefix": k.key_prefix,
+            "created_at": k.created_at.isoformat() if k.created_at else None,
+            "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+        }
+        for k in keys
+    ]
+
+
+@router.delete("/auth/api-keys/{key_id}")
+def revoke_api_key(key_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    key = db.get(ApiKey, key_id)
+    if key is None or key.user_id != user.id:
+        raise HTTPException(404, "API key not found")
+    db.delete(key)
+    db.commit()
+    return {"revoked": True}
+
+
+# ---------------------------------------------------------------------------
+# Shareable quote links (public, read-only)
+# ---------------------------------------------------------------------------
+
+@router.post("/api/projects/{project_id}/share")
+def share_project(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    project = _owned_project(project_id, user, db)
+    if not project.share_token:
+        project.share_token = uuid.uuid4().hex
+        db.commit()
+    job = _latest_done_job(project, db)
+    return {
+        "share_url": f"/share/{project.share_token}",
+        "has_result": job is not None and job.status == "done",
+    }
+
+
+@router.delete("/api/projects/{project_id}/share")
+def unshare_project(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    project = _owned_project(project_id, user, db)
+    project.share_token = None
+    db.commit()
+    return {"share_url": None}
+
+
+@router.get("/share/{token}", response_class=HTMLResponse)
+def public_share(token: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.share_token == token).first()
+    if project is None:
+        return HTMLResponse(
+            "<body style='font-family:sans-serif;text-align:center;padding:60px'>"
+            "<h2>This shared link is not available</h2>"
+            "<p><a href='/'>Open CutList</a></p></body>", status_code=404,
+        )
+    job = _latest_done_job(project, db)
+    summary = json.loads(job.result_json) if job is not None and job.result_json else None
+    if summary is None:
+        return HTMLResponse(
+            "<body style='font-family:sans-serif;text-align:center;padding:60px'>"
+            f"<h2>{project.name}</h2><p>The cutting plan is still being prepared.</p></body>",
+        )
+    return HTMLResponse(render_share_page(project.name, project.original_filename, project.created_at, summary))
+
+
+def _latest_done_job(project: Project, db: Session) -> Job | None:
+    return (
+        db.query(Job)
+        .filter(Job.project_id == project.id)
+        .order_by(Job.created_at.desc(), Job.id.desc())
+        .first()
+    )
 
 
 # ---------------------------------------------------------------------------

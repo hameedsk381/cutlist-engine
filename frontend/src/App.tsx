@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Check, LayoutGrid, LoaderCircle, MessageCircle, RotateCcw } from 'lucide-react';
+import { Check, LayoutGrid, LoaderCircle, LogIn, MessageCircle, RotateCcw } from 'lucide-react';
 import UploadView from './components/UploadView';
 import ReviewView from './components/ReviewView';
 import Dashboard from './components/Dashboard';
 import ChatDrawer from './components/ChatDrawer';
 import AuthView from './components/AuthView';
+import LandingView from './components/LandingView';
 import ProjectsView from './components/ProjectsView';
 import {
   aiDescribe, clearSaasToken, extractBoards, finalizeSession, friendlyError, getSaasToken, saasMe,
@@ -25,7 +26,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   // SaaS session: 'unknown' while we check for a stored token on load.
-  const [authState, setAuthState] = useState<'unknown' | 'anon' | 'saas' | 'legacy'>('unknown');
+  const [authState, setAuthState] = useState<'unknown' | 'anon' | 'auth' | 'saas' | 'legacy'>('unknown');
   const [user, setUser] = useState<SaaSUser | null>(null);
 
   useEffect(() => {
@@ -151,6 +152,27 @@ export default function App() {
   }
 
   if (authState === 'anon') {
+    return (
+      <div className="app">
+        <header className="topbar">
+          <div className="topbar-inner">
+            <div className="brand">
+              <span className="brand-mark" aria-hidden="true"><LayoutGrid size={20} /></span>
+              <span className="brand-name">CutList</span>
+            </div>
+            <div className="topbar-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setAuthState('auth')}>
+                <LogIn size={18} /> Sign in
+              </button>
+            </div>
+          </div>
+        </header>
+        <LandingView onOpenApp={() => setAuthState('auth')} />
+      </div>
+    );
+  }
+
+  if (authState === 'auth') {
     return (
       <div className="app">
         <AuthView

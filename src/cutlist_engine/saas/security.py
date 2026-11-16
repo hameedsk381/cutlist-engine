@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import logging
 import os
 import secrets
@@ -13,12 +14,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .models import User
+from .models import ApiKey, User
 
 logger = logging.getLogger(__name__)
 
 _JWT_ALG = "HS256"
 _TOKEN_TTL = _dt.timedelta(days=7)
+
+API_KEY_PREFIX = "ckl_"
 
 _secret = os.environ.get("CUTLIST_JWT_SECRET", "").strip()
 if not _secret:
@@ -57,6 +60,35 @@ def decode_token(token: str) -> int | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# API keys (for CNC shops / programmatic access)
+# ---------------------------------------------------------------------------
+
+import hashlib
+
+
+def _key_hash(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def generate_api_key() -> tuple[str, str, str]:
+    """Returns (raw_key, key_hash, key_prefix). Raw key is shown exactly once."""
+    raw = f"{API_KEY_PREFIX}{secrets.token_urlsafe(24)}"
+    return raw, _key_hash(raw), raw[:12]
+
+
+def user_for_api_key(raw: str, db: Session) -> User | None:
+    """Look up the owner of a raw API key (constant work, no timing oracle)."""
+    from datetime import datetime, timezone
+
+    found = db.query(ApiKey).filter(ApiKey.key_hash == _key_hash(raw)).first()
+    if found is None:
+        return None
+    found.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+    return db.get(User, found.user_id)
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -71,7 +103,16 @@ def get_current_user(
 ) -> User:
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
-    user_id = decode_token(credentials.credentials)
+    token = credentials.credentials
+
+    # API keys (ckl_...) authenticate programmatic access without a session.
+    if token.startswith(API_KEY_PREFIX):
+        user = user_for_api_key(token, db)
+        if user is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
+        return user
+
+    user_id = decode_token(token)
     if user_id is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — sign in again")
     user = db.get(User, user_id)

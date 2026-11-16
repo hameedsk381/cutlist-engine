@@ -148,6 +148,7 @@ export interface SaaSUser {
   id: number;
   email: string;
   plan: string;
+  email_verified: boolean;
 }
 
 export interface SaaSJob {
@@ -170,4 +171,16 @@ export interface SaaSProject {
 
 export interface SaaSProjectDetail extends SaaSProject {
   result?: ProcessResult;
+}
+
+export interface SaaSApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface SaaSApiKeyCreated extends SaaSApiKey {
+  key: string; // raw key, shown exactly once
 }

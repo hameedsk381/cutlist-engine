@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type {
   ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions,
-  SaaSProject, SaaSProjectDetail, SaaSUser,
+  SaaSApiKey, SaaSApiKeyCreated, SaaSProject, SaaSProjectDetail, SaaSUser,
 } from './types';
 
 /**
@@ -201,4 +201,36 @@ export async function rerunProject(id: number): Promise<void> {
 
 export function artifactDownloadUrl(projectId: number, path: string): string {
   return `${DESKTOP_API_BASE}/api/projects/${projectId}/download/${path}`;
+}
+
+// ---------------------------------------------------------------------------
+// SaaS M3: email verification, API keys, share links
+// ---------------------------------------------------------------------------
+
+export async function resendVerification(): Promise<{ verified: boolean; sent?: boolean }> {
+  const r = await api.post('/auth/resend-verification');
+  return r.data;
+}
+
+export async function listApiKeys(): Promise<SaaSApiKey[]> {
+  const r = await api.get('/auth/api-keys');
+  return r.data as SaaSApiKey[];
+}
+
+export async function createApiKey(name: string): Promise<SaaSApiKeyCreated> {
+  const r = await api.post('/auth/api-keys', _form({ name }));
+  return r.data as SaaSApiKeyCreated;
+}
+
+export async function revokeApiKey(id: number): Promise<void> {
+  await api.delete(`/auth/api-keys/${id}`);
+}
+
+export async function shareProject(id: number): Promise<{ share_url: string; has_result: boolean }> {
+  const r = await api.post(`/api/projects/${id}/share`);
+  return r.data;
+}
+
+export async function unshareProject(id: number): Promise<void> {
+  await api.delete(`/api/projects/${id}/share`);
 }
