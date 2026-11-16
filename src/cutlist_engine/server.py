@@ -180,8 +180,8 @@ _SESSION_LOCKS: dict[str, threading.Lock] = {}
 
 # Routes that authenticate per user (JWT or API key) rather than with the
 # shared workshop token.
-_SAAS_PATHS = {"/api/projects", "/api/offcuts"}
-_SAAS_PREFIXES = ("/api/projects/", "/api/offcuts/", "/api/tools/")
+_SAAS_PATHS = {"/api/projects", "/api/offcuts", "/api/brand"}
+_SAAS_PREFIXES = ("/api/projects/", "/api/offcuts/", "/api/tools/", "/api/brand/")
 
 
 @app.middleware("http")

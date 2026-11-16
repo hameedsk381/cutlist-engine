@@ -167,3 +167,20 @@ def test_deleting_the_account_removes_the_logo(client):  # noqa: F811
     assert logo_path(signed["user"]["id"]).exists()
     client.request("DELETE", "/auth/me", data={"password": "workshop123"}, headers=headers)
     assert not logo_path(signed["user"]["id"]).exists()
+
+
+def test_account_routes_work_when_the_shared_workshop_token_is_set(client, monkeypatch):  # noqa: F811
+    """A deployment with CUTLIST_API_TOKEN guards the old single-operator routes only.
+    Per-user routes (studio details, logo, quote PDF) must still use the user's own sign-in."""
+    from cutlist_engine import server
+
+    monkeypatch.setattr(server, "API_TOKEN", "shared-workshop-token")
+    token, project_id = _quoted_project(client, "guarded@example.com")
+    headers = _auth(token)
+    assert client.get("/api/brand", headers=headers).status_code == 200
+    assert client.put("/api/brand", json={"studio_name": "Guarded"}, headers=headers).status_code == 200
+    assert client.get("/api/brand/logo", headers=headers).status_code == 404  # no logo yet, but reached the route
+    assert client.post("/api/brand/logo", files={"file": ("l.png", _png(), "image/png")}, headers=headers).status_code == 200
+    assert client.get(f"/api/projects/{project_id}/quote.pdf", headers=headers).status_code == 200
+    # The old routes still need the shared token.
+    assert client.get("/api/legacy-anything", headers=headers).status_code == 401
