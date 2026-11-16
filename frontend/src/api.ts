@@ -1,5 +1,8 @@
 import axios from 'axios';
-import type { ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions } from './types';
+import type {
+  ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions,
+  SaaSProject, SaaSProjectDetail, SaaSUser,
+} from './types';
 
 /**
  * Bearer token for /api/* routes.
@@ -23,12 +26,39 @@ const DESKTOP_API_BASE =
 
 const api = axios.create({ baseURL: DESKTOP_API_BASE });
 
-if (apiToken) {
-  api.interceptors.request.use((config) => {
-    config.headers.set('Authorization', `Bearer ${apiToken}`);
-    return config;
-  });
+// ---------------------------------------------------------------------------
+// SaaS session token (JWT from /auth/login) — takes priority over the legacy
+// shared CUTLIST_API_TOKEN.
+// ---------------------------------------------------------------------------
+const SAAS_TOKEN_KEY = 'cutlist_saas_token';
+
+export function getSaasToken(): string {
+  try {
+    return window.localStorage.getItem(SAAS_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
 }
+
+export function setSaasToken(token: string): void {
+  window.localStorage.setItem(SAAS_TOKEN_KEY, token);
+}
+
+export function clearSaasToken(): void {
+  window.localStorage.removeItem(SAAS_TOKEN_KEY);
+}
+
+function bearer(): string | null {
+  const saas = getSaasToken();
+  if (saas) return `Bearer ${saas}`;
+  return apiToken ? `Bearer ${apiToken}` : null;
+}
+
+api.interceptors.request.use((config) => {
+  const auth = bearer();
+  if (auth) config.headers.set('Authorization', auth);
+  return config;
+});
 
 export async function healthCheck() {
   const r = await api.get('/healthz');
@@ -117,4 +147,58 @@ export function friendlyError(error: unknown, fallback: string): string {
   }
   if (err?.response?.status === 413) return 'That file is too large to upload.';
   return fallback;
+}
+
+// ---------------------------------------------------------------------------
+// SaaS: accounts, projects, jobs
+// ---------------------------------------------------------------------------
+
+function _form(data: Record<string, string>): FormData {
+  const fd = new FormData();
+  Object.entries(data).forEach(([k, v]) => fd.append(k, v));
+  return fd;
+}
+
+export async function saasSignup(email: string, password: string): Promise<SaaSUser> {
+  const r = await api.post('/auth/signup', _form({ email, password }));
+  setSaasToken(r.data.token);
+  return r.data.user as SaaSUser;
+}
+
+export async function saasLogin(email: string, password: string): Promise<SaaSUser> {
+  const r = await api.post('/auth/login', _form({ email, password }));
+  setSaasToken(r.data.token);
+  return r.data.user as SaaSUser;
+}
+
+export async function saasMe(): Promise<SaaSUser> {
+  const r = await api.get('/auth/me');
+  return r.data as SaaSUser;
+}
+
+export async function createProject(file: File, name: string, config: Record<string, unknown>): Promise<SaaSProject> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('name', name);
+  Object.entries(config).forEach(([k, v]) => fd.append(k, String(v)));
+  const r = await api.post('/api/projects', fd);
+  return r.data.project as SaaSProject;
+}
+
+export async function listProjects(): Promise<SaaSProject[]> {
+  const r = await api.get('/api/projects');
+  return r.data as SaaSProject[];
+}
+
+export async function getProject(id: number): Promise<SaaSProjectDetail> {
+  const r = await api.get(`/api/projects/${id}`);
+  return r.data as SaaSProjectDetail;
+}
+
+export async function rerunProject(id: number): Promise<void> {
+  await api.post(`/api/projects/${id}/jobs`);
+}
+
+export function artifactDownloadUrl(projectId: number, path: string): string {
+  return `${DESKTOP_API_BASE}/api/projects/${projectId}/download/${path}`;
 }

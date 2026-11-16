@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, LayoutGrid, LoaderCircle, MessageCircle, RotateCcw } from 'lucide-react';
 import UploadView from './components/UploadView';
 import ReviewView from './components/ReviewView';
 import Dashboard from './components/Dashboard';
 import ChatDrawer from './components/ChatDrawer';
-import { aiDescribe, extractBoards, finalizeSession, friendlyError } from './api';
+import AuthView from './components/AuthView';
+import ProjectsView from './components/ProjectsView';
+import {
+  aiDescribe, clearSaasToken, extractBoards, finalizeSession, friendlyError, getSaasToken, saasMe,
+} from './api';
 import type {
-  AppView, ExtractResult, FinalizeResult, ProcessConfig, ProcessResult, ReviewDecisions,
+  AppView, ExtractResult, FinalizeResult, ProcessConfig, ProcessResult, ReviewDecisions, SaaSUser,
 } from './types';
 
 const STEPS: { view: AppView; label: string }[] = [
@@ -19,6 +23,26 @@ export default function App() {
   const [view, setView] = useState<AppView>('upload');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // SaaS session: 'unknown' while we check for a stored token on load.
+  const [authState, setAuthState] = useState<'unknown' | 'anon' | 'saas' | 'legacy'>('unknown');
+  const [user, setUser] = useState<SaaSUser | null>(null);
+
+  useEffect(() => {
+    if (!getSaasToken()) {
+      setAuthState('anon');
+      return;
+    }
+    saasMe()
+      .then((u) => {
+        setUser(u);
+        setAuthState('saas');
+      })
+      .catch(() => {
+        clearSaasToken();
+        setAuthState('anon');
+      });
+  }, []);
 
   const [config, setConfig] = useState<ProcessConfig | null>(null);
   const [extractData, setExtractData] = useState<ExtractResult | null>(null);
@@ -102,6 +126,46 @@ export default function App() {
     setChatOpen(false);
   };
 
+  // --- SaaS routing --------------------------------------------------------
+  if (authState === 'unknown') {
+    return (
+      <div className="app" style={{ alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <LoaderCircle size={36} className="spinner" style={{ color: 'var(--primary)' }} />
+      </div>
+    );
+  }
+
+  if (authState === 'saas' && user) {
+    return (
+      <div className="app">
+        <ProjectsView
+          user={user}
+          onSignOut={() => {
+            clearSaasToken();
+            setUser(null);
+            setAuthState('anon');
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (authState === 'anon') {
+    return (
+      <div className="app">
+        <AuthView
+          onAuthed={(u) => {
+            setUser(u);
+            setAuthState('saas');
+          }}
+          onTryWithoutAccount={() => setAuthState('legacy')}
+        />
+      </div>
+    );
+  }
+
+  // --- Legacy anonymous flow (upload → review → dashboard) -----------------
+
   const currentIndex = STEPS.findIndex(s => s.view === view);
   const canGoTo = (target: AppView) => target === 'review' && view === 'dashboard' && !!extractData;
 
@@ -137,6 +201,11 @@ export default function App() {
           </nav>
 
           <div className="topbar-actions">
+            {authState === 'legacy' && (
+              <button type="button" className="btn btn-ghost" onClick={() => setAuthState('anon')}>
+                <span className="brand-name">Sign in</span>
+              </button>
+            )}
             {view === 'dashboard' && result && (
               <button type="button" className="btn btn-ghost" onClick={() => setChatOpen(true)}>
                 <MessageCircle size={20} /> <span className="brand-name">Ask</span>

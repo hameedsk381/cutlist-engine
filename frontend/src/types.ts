@@ -139,3 +139,35 @@ export interface ProcessConfig {
 }
 
 export type AppView = 'upload' | 'review' | 'dashboard';
+
+// ---------------------------------------------------------------------------
+// SaaS (accounts + projects + async jobs)
+// ---------------------------------------------------------------------------
+
+export interface SaaSUser {
+  id: number;
+  email: string;
+  plan: string;
+}
+
+export interface SaaSJob {
+  id: number;
+  status: 'queued' | 'processing' | 'done' | 'failed';
+  error: string | null;
+  gated: boolean;
+  artifacts: { name: string; path: string }[] | null;
+  created_at: string | null;
+  finished_at: string | null;
+}
+
+export interface SaaSProject {
+  id: number;
+  name: string;
+  original_filename: string;
+  created_at: string | null;
+  job: SaaSJob | null;
+}
+
+export interface SaaSProjectDetail extends SaaSProject {
+  result?: ProcessResult;
+}
