@@ -35,6 +35,38 @@ One container serves the review SPA, API and artifacts; sessions persist on a
 named volume. See [docs/PRODUCTION.md](docs/PRODUCTION.md) for TLS, env vars,
 backups and scaling notes.
 
+## SaaS mode (multi-user)
+
+Beyond the single-operator setup above, the engine ships with a SaaS control
+plane (`src/cutlist_engine/saas/`): user accounts (JWT, bcrypt), per-user
+projects, and a DB-backed async job queue with a separate worker process.
+
+| Route | What |
+|---|---|
+| `POST /auth/signup` · `POST /auth/login` | email + password → JWT |
+| `GET  /auth/me` | current account |
+| `POST /api/projects` | upload model + config → project + queued job |
+| `GET  /api/projects` | list your projects (with latest job status) |
+| `GET  /api/projects/{id}` | project detail incl. result + artifacts when done |
+| `POST /api/projects/{id}/jobs` | re-run processing |
+| `GET  /api/projects/{id}/download/{file}` | download any artifact (auth-scoped) |
+
+Run it:
+
+```bash
+# dev — SQLite + in-repo storage, then run the worker in another terminal
+python -m uvicorn cutlist_engine.server:app --port 8000
+python -m cutlist_engine.saas.worker
+
+# production — docker compose brings up Postgres + API + worker
+docker compose up -d --build
+```
+
+Key env vars: `CUTLIST_DATABASE_URL` (SQLite default / Postgres in compose),
+`CUTLIST_JWT_SECRET` (**required in production**), `CUTLIST_STORAGE_DIR`,
+`CUTLIST_MONTHLY_JOB_LIMIT` (free-plan quota; billing via Razorpay is the
+next milestone). The worker requeues jobs left `processing` by a crashed run.
+
 ## Run
 
 ```powershell

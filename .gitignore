@@ -44,6 +44,10 @@ desktop/src-tauri/target/
 desktop/src-tauri/binaries/
 desktop/src-tauri/gen/
 
+# Runtime data (SaaS dev DB, uploaded models, generated artifacts)
+data/
+tests/_tmp_out/
+
 # IDEs
 .vscode/
 .idea/

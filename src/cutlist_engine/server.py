@@ -57,6 +57,8 @@ from fastapi.staticfiles import StaticFiles
 from .dxf_export import write_sheets_dxf_zip
 from .gcode_export import GCodeConfig, write_sheets_gcode
 from .models import ReviewDecision
+from .saas.db import init_db
+from .saas.routes import router as saas_router
 from .outputs import (
     write_cutlist_csv,
     write_json_report,
@@ -79,6 +81,7 @@ ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae"}
 
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
+    init_db()  # SaaS tables (users/projects/jobs) — no-op if already created
     _cleanup_expired_sessions()
     yield
 
@@ -94,6 +97,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# SaaS control plane: /auth/*, /api/projects, /api/projects/{id}/*
+app.include_router(saas_router)
 
 FRONTEND_DIR = Path(
     os.environ.get(

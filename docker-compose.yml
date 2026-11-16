@@ -1,38 +1,80 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: cutlist-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cutlist
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: cutlist
+    volumes:
+      - cutlist-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cutlist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   cutlist-engine:
-    build:
-      context: .
-      args:
-        # Embeds the API token into the SPA so downloads/auth work in the browser
-        VITE_API_TOKEN: ${CUTLIST_API_TOKEN:-}
+    build: .
     image: cutlist-engine:latest
     container_name: cutlist-engine
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "${PORT:-8000}:8000"
     environment:
-      # Security — set CUTLIST_API_TOKEN to require Bearer auth on /api/*
+      # Security — set CUTLIST_API_TOKEN to require Bearer auth on legacy /api/*
       CUTLIST_API_TOKEN: ${CUTLIST_API_TOKEN:-}
       # AI features (optional)
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # SaaS database (users, projects, jobs)
+      CUTLIST_DATABASE_URL: postgresql+psycopg://cutlist:${POSTGRES_PASSWORD}@db:5432/cutlist
+      CUTLIST_JWT_SECRET: ${CUTLIST_JWT_SECRET:?set CUTLIST_JWT_SECRET in .env}
+      CUTLIST_STORAGE_DIR: /data/storage
+      # Free-plan quota
+      CUTLIST_MONTHLY_JOB_LIMIT: ${CUTLIST_MONTHLY_JOB_LIMIT:-50}
       # Production limits
       CUTLIST_MAX_UPLOAD_MB: ${CUTLIST_MAX_UPLOAD_MB:-100}
       CUTLIST_MAX_TRIANGLES: ${CUTLIST_MAX_TRIANGLES:-500000}
       CUTLIST_SESSION_TTL_HOURS: ${CUTLIST_SESSION_TTL_HOURS:-168}
       # Sessions persist here across restarts
       CUTLIST_SESSION_DIR: /data/sessions
-      # Keep at 1 (sessions + locks live in-process)
+      # Keep at 1 (session state + locks live in-process)
       CUTLIST_WORKERS: ${CUTLIST_WORKERS:-1}
     volumes:
       - cutlist-sessions:/data/sessions
+      - cutlist-storage:/data/storage
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
-    # Guard against runaway geometry processing
+    mem_limit: 2g
+
+  # Processes queued cutlist jobs from the DB — the API stays responsive
+  saas-worker:
+    build: .
+    image: cutlist-engine:latest
+    container_name: cutlist-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "cutlist_engine.saas.worker"]
+    environment:
+      CUTLIST_DATABASE_URL: postgresql+psycopg://cutlist:${POSTGRES_PASSWORD}@db:5432/cutlist
+      CUTLIST_STORAGE_DIR: /data/storage
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      CUTLIST_MAX_TRIANGLES: ${CUTLIST_MAX_TRIANGLES:-500000}
+    volumes:
+      - cutlist-storage:/data/storage
     mem_limit: 2g
 
 volumes:
   cutlist-sessions:
+  cutlist-storage:
+  cutlist-db:

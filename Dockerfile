@@ -43,7 +43,7 @@ WORKDIR /app
 # Everything ships as wheels for 3.12 — no compiler needed.
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN python -m pip install --no-cache-dir ".[cad,ai]"
+RUN python -m pip install --no-cache-dir ".[cad,ai,saas]"
 
 # Built SPA served by FastAPI at /
 COPY --from=frontend /app/dist/ ./frontend/dist/
