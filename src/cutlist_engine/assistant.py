@@ -17,7 +17,7 @@ MAX_ROWS_IN_FACTS = 150
 
 _EDGE_CHOICES = ("front", "long", "all", "none")
 _EDGE_WORDS = {"front": "the front edge", "long": "both long edges", "all": "all 4 edges"}
-_GENERIC_NAME = re.compile(r"^(part|object|mesh|group|component|solid|board|panel|cube|box)?[\s_#-]*\d*$", re.I)
+_GENERIC_NAME = re.compile(r"^((part|object|mesh|group|component|solid|board|panel|cube|box)[\s_#-]*\d*([\s_#-]\d+)*|\d+)?$", re.I)
 
 
 def _band(choice: str, tape: float) -> list[float]:

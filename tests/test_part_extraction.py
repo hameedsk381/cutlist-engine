@@ -135,3 +135,54 @@ def test_loose_faces_straddling_the_origin_are_paired():
     assert len(extraction.boards) == 1
     assert extraction.boards[0].thickness == 18
     assert extraction.report.inferred_board_count == 1
+
+
+def test_part_longer_than_every_sheet_is_reported_not_fatal(tmp_path):
+    """One panel too long for the sheet used to fail the whole job with a bare error."""
+    from cutlist_engine.furniture import describe_to_model
+    from cutlist_engine.parsers import load_model
+    from cutlist_engine.pipeline import ProcessConfig, process_triangles
+
+    model = describe_to_model("Wardrobe 2100 high, 3100 wide, 600 deep, 4 shutters, 2 shelves")
+    path = tmp_path / "wide.obj"
+    path.write_text(model["obj"])
+
+    result = process_triangles(load_model(path), ProcessConfig())
+
+    assert {b.label for b in result.oversize_boards} == {"Bottom", "Top", "Skirting", "Back"}
+    assert result.material_summary.sheet_count > 0  # the parts that fit are still planned
+    assert not any(b in result.boards for b in result.oversize_boards)
+    assert any("NOT in the plan" in issue for issue in result.model_fix_report.issues)
+
+    # A big enough sheet takes them all.
+    result = process_triangles(load_model(path), ProcessConfig(sheet_width=3200, sheet_height=2100))
+    assert result.oversize_boards == []
+
+
+def test_model_exported_in_metres_is_scaled_and_flagged(tmp_path):
+    """A Blender export in metres was read as mm: every part came out a few mm and the plan was empty."""
+    from cutlist_engine.furniture import describe_to_model
+    from cutlist_engine.parsers import load_model
+    from cutlist_engine.pipeline import ProcessConfig, process_triangles
+
+    model = describe_to_model("Kitchen base unit 720 high, 600 wide, 560 deep, 1 shelf, 1 shutter")
+    in_mm = tmp_path / "mm.obj"
+    in_mm.write_text(model["obj"])
+    in_metres = tmp_path / "metres.obj"
+    lines = []
+    for line in model["obj"].splitlines():
+        if line.startswith("v "):
+            lines.append("v " + " ".join(f"{float(x) / 1000:.6f}" for x in line.split()[1:4]))
+        else:
+            lines.append(line)
+    in_metres.write_text("\n".join(lines))
+
+    reference = process_triangles(load_model(in_mm), ProcessConfig())
+    triangles = load_model(in_metres)
+    result = process_triangles(triangles, ProcessConfig())
+
+    assert triangles.scaled_from_metres
+    assert not getattr(load_model(in_mm), "scaled_from_metres", False)
+    size = lambda r: sorted((round(b.length), round(b.width), b.thickness) for b in r.boards)  # noqa: E731
+    assert size(result) == size(reference) and len(result.boards) > 0
+    assert any("read as metres" in issue for issue in result.model_fix_report.issues)

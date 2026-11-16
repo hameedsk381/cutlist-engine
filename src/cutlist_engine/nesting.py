@@ -201,7 +201,10 @@ def _attempt_pack(
     kerf: float,
 ) -> tuple[list[NestedPart], float, list[Board], list[_FreeRect]]:
     """Try to place boards on a single sheet. Nothing is mutated outside."""
-    free_rects = [_FreeRect(0.0, 0.0, sheet_width, sheet_height)]
+    # Each part reserves its length plus one saw cut. The last part against a
+    # sheet edge needs no cut after it, so pack in a sheet one kerf bigger and
+    # clip the leftovers back to the real sheet afterwards.
+    free_rects = [_FreeRect(0.0, 0.0, sheet_width + kerf, sheet_height + kerf)]
     parts: list[NestedPart] = []
     used_area = 0.0
     not_placed: list[Board] = []
@@ -225,7 +228,13 @@ def _attempt_pack(
         )
         used_area += board.length * board.width
 
-    return parts, used_area, not_placed, free_rects
+    clipped = []
+    for rect in free_rects:
+        width = min(rect.width, sheet_width - rect.x)
+        height = min(rect.height, sheet_height - rect.y)
+        if width > 0 and height > 0:
+            clipped.append(_FreeRect(rect.x, rect.y, width, height))
+    return parts, used_area, not_placed, clipped
 
 
 def _place_with_maxrects(

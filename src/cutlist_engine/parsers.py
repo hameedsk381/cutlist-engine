@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import struct
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -23,14 +24,22 @@ def load_mesh_json(path: Path) -> list[Triangle]:
     return triangles
 
 
+METRES_BELOW = 20.0
+"""A model smaller than this across, read as millimetres, is under 2 cm: not
+furniture. Such files are in metres (Blender exports its scene units)."""
+
+
+class ModelTriangles(list):
+    """Triangles read from a file, with a note when the units were corrected."""
+
+    scaled_from_metres = False
+
+
 def load_model(path: Path) -> list[Triangle]:
     suffix = path.suffix.lower()
-    if suffix == ".dxf":
-        return load_dxf(path)
-    if suffix == ".obj":
-        return load_obj(path)
-    if suffix == ".stl":
-        return load_stl(path)
+    if suffix in {".obj", ".stl", ".dxf", ".dae"}:
+        loaders = {".obj": load_obj, ".stl": load_stl, ".dxf": load_dxf, ".dae": load_dae}
+        return _fix_units(loaders[suffix](path))
     if suffix == ".json":
         return load_mesh_json(path)
     if suffix in {".step", ".stp"}:
@@ -41,9 +50,23 @@ def load_model(path: Path) -> list[Triangle]:
         from .gltf import load_gltf
 
         return load_gltf(path)
-    if suffix == ".dae":
-        return load_dae(path)
     raise ValueError(f"Unsupported input format '{path.suffix}'. Supported formats: .obj, .dae, .glb, .gltf, .step, .stp, .stl, .dxf, .json")
+
+
+def _fix_units(triangles: list[Triangle]) -> list[Triangle]:
+    """Files without units are read as millimetres; a tiny model is really metres."""
+    if not triangles:
+        return triangles
+    coords = [(v.x, v.y, v.z) for t in triangles for v in t.vertices]
+    extent = max(max(c[i] for c in coords) - min(c[i] for c in coords) for i in range(3))
+    result = ModelTriangles(triangles)
+    if 0 < extent < METRES_BELOW:
+        scale = lambda v: Vec3(v.x * 1000.0, v.y * 1000.0, v.z * 1000.0)  # noqa: E731
+        result = ModelTriangles(
+            replace(t, a=scale(t.a), b=scale(t.b), c=scale(t.c)) for t in triangles
+        )
+        result.scaled_from_metres = True
+    return result
 
 
 def load_dxf(path: Path) -> list[Triangle]:

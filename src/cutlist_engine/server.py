@@ -714,6 +714,7 @@ def _serialize_result(result) -> dict[str, Any]:
         "model_fix_report": asdict(result.model_fix_report) if result.model_fix_report else None,
         "sheet_size_options": [asdict(o) for o in result.sheet_size_options],
         "rejected_boards": [b.id for b in result.rejected_boards],
+        "oversize_parts": [_board_payload(b) for b in result.oversize_boards],
         "edge_banding": edge_banding_summary(result.boards),
     }
 

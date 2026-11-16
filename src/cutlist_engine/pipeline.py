@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -68,6 +70,8 @@ class ProcessResult:
     sheet_size_options: tuple[SheetSizeOption, ...] = ()
     per_material_summaries: tuple[MaterialSummary, ...] = ()
     rejected_boards: list[Board] = field(default_factory=list)
+    oversize_boards: list[Board] = field(default_factory=list)
+    """Parts longer than any sheet. Left out of the plan and reported, not nested."""
 
 
 # -----------------------------------------------------------------------------
@@ -108,6 +112,10 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
 
     # Apply operator review (accept / reject / rename).
     boards, rejected = _apply_review(boards, config.review)
+
+    # A part longer than every sheet can never be nested. Set it aside and say
+    # so; one such part must not stop the plan for all the others.
+    boards, oversize = _split_oversize(boards, material_registry, config)
 
     cutlist = build_cutlist(boards, tolerance=config.thickness_tolerance)
 
@@ -190,6 +198,9 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
         min_board_confidence=config.min_board_confidence,
         board_count=len(boards),
         auto_materials=tuple(auto_materials),
+        oversize=oversize,
+        material_registry=material_registry,
+        scaled_from_metres=bool(getattr(triangles, "scaled_from_metres", False)),
     )
 
     waste_optimization_report = waste_reports[0] if len(waste_reports) == 1 else _merge_waste_reports(waste_reports)
@@ -205,7 +216,34 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
         sheet_size_options=tuple(sheet_options),
         per_material_summaries=tuple(per_material),
         rejected_boards=rejected,
+        oversize_boards=oversize,
     )
+
+
+def _fits_sheet(board: Board, width: float, height: float) -> bool:
+    if board.grain_locked:
+        return board.length <= width and board.width <= height
+    return (
+        min(board.length, board.width) <= min(width, height)
+        and max(board.length, board.width) <= max(width, height)
+    )
+
+
+def _split_oversize(
+    boards: list[Board], registry: dict[str, MaterialSpec], config: ProcessConfig,
+) -> tuple[list[Board], list[Board]]:
+    """Split boards into (fits some sheet, longer than every sheet)."""
+    default_sizes = [(config.sheet_width, config.sheet_height)] + [
+        (w, h) for _, w, h, _ in config.candidate_sheet_sizes
+    ]
+    fitting: list[Board] = []
+    oversize: list[Board] = []
+    for board in boards:
+        name = board.material or _DEFAULT_MATERIAL
+        spec = registry.get(name) or registry.get(_DEFAULT_MATERIAL)
+        sizes = default_sizes if name == _DEFAULT_MATERIAL or spec is None else [(spec.sheet_width, spec.sheet_height)]
+        (fitting if any(_fits_sheet(board, w, h) for w, h in sizes) else oversize).append(board)
+    return fitting, oversize
 
 
 def summarize_material(
@@ -332,23 +370,20 @@ def _route_by_thickness(board: Board, config: ProcessConfig) -> Board:
 
 
 def _smart_label(raw: str) -> str:
-    """Shorten long SketchUp group hierarchy names to meaningful last segments.
-    e.g. 'Mesh1781 Group1575 Group1284 Group1283 Group190 Pooja_unit1 Model'
-      -> 'Pooja_unit1'
+    """Shorten a SketchUp group hierarchy name to the part's own name.
+
+    The name reads innermost first and ends at the model root, for example
+    'Mesh9 Component30_1 Group4 Group3 Group1 Component_33_1 Model'. The part's
+    own name is the first token that is not mesh, group or model scaffolding;
+    the root at the end is shared by every part and says nothing about this one.
     """
     if not raw or len(raw) <= 40:
         return raw
-    # Split on spaces, prefer the last non-generic token.
-    generic = {"Model", "Group", "Component", "Mesh", "Default"}
-    parts = raw.split()
-    # Walk backwards and find first meaningful name
-    for token in reversed(parts):
-        # Skip tokens that are just 'Model' or 'GroupNNN' etc.
-        base = ''.join(c for c in token if not c.isdigit()).rstrip('_')
-        if base and base not in generic and len(token) > 2:
-            return token
-    # Fallback: last two tokens
-    return ' '.join(parts[-2:]) if len(parts) >= 2 else raw
+    scaffolding = re.compile(r"^(mesh|group|model|default)\d*$", re.IGNORECASE)
+    tokens = [t for t in raw.split() if not scaffolding.match(t)]
+    if tokens:
+        return tokens[0]
+    return " ".join(raw.split()[-2:])
 
 
 def _apply_material_defaults(board: Board, materials: dict[str, MaterialSpec]) -> Board:
@@ -570,9 +605,32 @@ def _build_model_fix_report(
     min_board_confidence: float = 0.3,
     board_count: int,
     auto_materials: tuple[str, ...] = (),
+    oversize: list[Board] | None = None,
+    material_registry: dict[str, MaterialSpec] | None = None,
+    scaled_from_metres: bool = False,
 ) -> ModelFixReport:
     issues: list[str] = []
     recommendations: list[str] = []
+
+    if scaled_from_metres:
+        issues.append(
+            "This file is only a few units across, so it was read as metres and scaled to millimetres."
+        )
+        recommendations.append(
+            "Check the sizes. In Blender set Scene > Units to millimetres, or scale the export by 1000, so the file is in mm."
+        )
+
+    if oversize:
+        sizes = sorted({(round(b.length), round(b.width), b.thickness) for b in oversize}, reverse=True)
+        listed = ", ".join(f"{l} x {w} mm ({t:g} thick)" for l, w, t in sizes[:6])
+        issues.append(
+            f"{len(oversize)} part(s) are bigger than the sheet and are NOT in the plan: {listed}"
+            f"{', and more' if len(sizes) > 6 else ''}."
+        )
+        recommendations.append(
+            "Use a longer sheet, or split these parts in the design (for example a joint on a vertical), "
+            "then make the plan again. Check they are not a wrongly scaled or merged shape."
+        )
 
     if extraction.skipped_parts:
         shown = ", ".join(extraction.skipped_parts[:8])
