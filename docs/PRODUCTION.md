@@ -36,7 +36,11 @@ No separate web server needed.
 | Variable | Default | Purpose |
 |---|---|---|
 | `CUTLIST_API_TOKEN` | *(unset)* | **Set in production.** All `/api/*` routes then require `Authorization: Bearer <token>`. `/healthz` and static SPA stay open. |
-| `GROQ_API_KEY` | *(unset)* | Enables `/api/ai/*` (part naming, chat) and the fallback that reads sizes out of unusual wording in describe. Optional: describe works without it. |
+| `GROQ_API_KEY` | *(unset)* | Switches on every AI feature (see README, "AI layer"). Optional: everything else works without it, and the web app hides the AI buttons. |
+| `CUTLIST_AI_MODEL` | `openai/gpt-oss-120b` | Text model. Change it when the provider retires a model. |
+| `CUTLIST_AI_VISION_MODEL` | `qwen/qwen3.8-27b` | Model that reads sketch photos. A preview model at the provider, so the most likely to change. |
+| `CUTLIST_AI_SPEECH_MODEL` | `whisper-large-v3-turbo` | Speech-to-text model for voice notes. |
+| `CUTLIST_AI_DAILY_LIMIT` | `200` | AI calls per user per day. Held in memory per process, so it resets on restart and is not a billing meter. |
 | `CUTLIST_MAX_UPLOAD_MB` | `100` | Rejects uploads above this size. |
 | `CUTLIST_MAX_TRIANGLES` | `500000` | Rejects geometry too expensive to process. |
 | `CUTLIST_SESSION_TTL_HOURS` | `168` | Stale session folders are cleaned on startup. |

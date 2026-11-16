@@ -1,4 +1,4 @@
-import type { LinearPlan, PartOverrides, QuoteInput } from './types';
+import type { AssistantAnswer, LinearPlan, PartOverrides, QuoteInput } from './types';
 import axios from 'axios';
 import type {
   ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions,
@@ -287,4 +287,40 @@ export async function updateProjectSettings(
 export async function linearNest(payload: Record<string, unknown>): Promise<LinearPlan> {
   const r = await api.post('/api/tools/linear', payload);
   return r.data;
+}
+
+// ---------------------------------------------------------------------------
+// AI: voice, sketch photo and the plan assistant (signed-in users)
+// ---------------------------------------------------------------------------
+
+/** Whether the server has AI switched on. Never throws: no AI just hides the controls. */
+export async function aiAvailable(): Promise<boolean> {
+  try {
+    const r = await api.get('/api/tools/ai');
+    return !!r.data.available;
+  } catch {
+    return false;
+  }
+}
+
+export async function transcribeSpeech(audio: Blob): Promise<string> {
+  const fd = new FormData();
+  const ext = audio.type.includes('mp4') ? 'm4a' : audio.type.includes('ogg') ? 'ogg' : 'webm';
+  fd.append('file', audio, `speech.${ext}`);
+  const r = await api.post('/api/tools/ai/transcribe', fd);
+  return r.data.text as string;
+}
+
+export async function readSketch(photo: File): Promise<{ description: string; missing: string[] }> {
+  const fd = new FormData();
+  fd.append('file', photo);
+  const r = await api.post('/api/tools/ai/sketch', fd);
+  return r.data;
+}
+
+export async function askAssistant(
+  projectId: number, message: string, history: { role: string; content: string }[], language: string,
+): Promise<AssistantAnswer> {
+  const r = await api.post(`/api/projects/${projectId}/ai/chat`, { message, history, language });
+  return r.data as AssistantAnswer;
 }

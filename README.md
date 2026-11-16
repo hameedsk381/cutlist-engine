@@ -216,7 +216,7 @@ pipeline as an upload: review, DXF, G-code, labels, share link.
 Every panel size is computed in code from fixed carcass rules in
 `furniture.py`, and the rules used are returned as `notes`. No language model
 does arithmetic. If `GROQ_API_KEY` is set, an LLM is used only as a fallback to
-read the overall size and counts out of unusual wording. Drawers are worked
+read the overall size and counts out of unusual wording or another language. Drawers are worked
 out as boxes for side-mounted telescopic channels, and hinge and channel
 counts are suggested.
 
@@ -240,13 +240,45 @@ a tape total. **Quote for your customer** adds labour, hardware, tape price
 and margin; the shared link then shows the quote total and hides your costs.
 Both are saved with `PUT /api/projects/{id}/settings`.
 
+## AI layer
+
+Set `GROQ_API_KEY` to switch it on. Without a key the app works as before and
+the AI buttons are hidden. All model calls go through `src/cutlist_engine/ai.py`.
+
+The rule: **a model reads and writes language, code does the arithmetic.**
+No model output is ever used as a panel size, sheet count, tape length or
+price.
+
+| Where | What the model does | What code does |
+|---|---|---|
+| Describe box | Reads height, width, depth and counts from text in any language (Hindi, Hinglish, Telugu...) when the English rules cannot | Validates every value (`clean_params`), then the carcass rules compute all panels |
+| "Say it" | Turns a voice note into text in the describe box | Nothing is submitted until the person has read it |
+| "Photo of a sketch" | Reads the overall size and counts from a photo of a drawing | Writes them as a sentence the person checks; lists any size it could not read |
+| "Ask AI" on a plan | Answers from facts computed by the software, and proposes edge banding, part names or quote amounts | `assistant.py` validates each proposal; it is saved only when the person presses Apply, through the normal settings route |
+| Tips, unnamed parts | Writes tips; names parts called `Part 3` or `Mesh` | Names given by the designer are never replaced |
+
+Routes (signed-in users and API keys): `GET /api/tools/ai`,
+`POST /api/tools/ai/transcribe`, `POST /api/tools/ai/sketch`,
+`POST /api/projects/{id}/ai/chat`.
+
+**Status.** The code paths are covered by `tests/test_ai_layer.py` using a
+scripted stand-in for the provider, and the web flows were checked in a browser
+the same way. **No call has been made to a real model with these prompts**, so
+answer quality, Hindi replies, sketch reading and speech accuracy are
+unmeasured. Model ids were taken from Groq's documentation in November 2026;
+they are settings (`CUTLIST_AI_MODEL`, `CUTLIST_AI_VISION_MODEL`,
+`CUTLIST_AI_SPEECH_MODEL`) because providers retire models. The previous
+hard-coded model had been retired, which had silently switched off every AI
+feature.
+
 ## Languages
 
 The web app has an English / हिन्दी switch (top of the projects page). Text
 lives in `frontend/src/i18n.ts`, keyed by the English string, so anything not
 yet translated shows in English. The Hindi was written without a
 native-speaker review; have one done before promoting it. Furniture
-descriptions must still be typed in English.
+descriptions can be typed or spoken in any language when AI is switched on
+(see "AI layer"); without it they must be in English.
 
 ## Accuracy library
 

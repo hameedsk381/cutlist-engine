@@ -13,6 +13,7 @@ AI flows (Groq):
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -59,6 +60,7 @@ from .gcode_export import GCodeConfig, write_sheets_gcode
 from .models import ReviewDecision
 from .saas.db import init_db
 from .saas.routes import router as saas_router
+from .saas.ai_routes import router as saas_ai_router
 from .outputs import (
     write_cutlist_csv,
     write_json_report,
@@ -69,6 +71,8 @@ from .furniture import describe_to_model
 from .parsers import load_model
 from .pipeline import ProcessConfig, edge_banding_summary, process_triangles
 from . import ai as ai_module
+
+logger = logging.getLogger(__name__)
 
 
 SESSIONS_DIR = Path(os.environ.get("CUTLIST_SESSION_DIR", str(Path(tempfile.gettempdir()) / "cutlist_engine_sessions")))
@@ -101,6 +105,7 @@ app.add_middleware(
 
 # SaaS control plane: /auth/*, /api/projects, /api/projects/{id}/*
 app.include_router(saas_router)
+app.include_router(saas_ai_router)
 
 FRONTEND_DIR = Path(
     os.environ.get(
@@ -189,19 +194,15 @@ async def api_process(
     result = process_triangles(triangles, config)
     serialized = _serialize_result(result)
     
-    # Auto-label parts for better UX
-    try:
-        labels = ai_module.label_parts(serialized["boards"])
-        for board in serialized["boards"]:
-            if board["id"] in labels:
-                board["label"] = labels[board["id"]]
-        # Also update cutlist labels
-        for item in serialized["cutlist"]:
-            bid = item["board_ids"][0] if item.get("board_ids") else None
-            if bid in labels:
-                item["labels"] = [labels[bid]]
-    except Exception as e:
-        print(f"DEBUG: AI labeling failed: {e}")
+    # Name parts the model left unnamed. Names the designer gave are kept.
+    labels = _ai_names_for_unnamed(serialized["boards"])
+    for board in serialized["boards"]:
+        if board["id"] in labels:
+            board["label"] = labels[board["id"]]
+    for item in serialized["cutlist"]:
+        named = [labels[b] for b in item.get("board_ids", []) if b in labels]
+        if named:
+            item["labels"] = named
 
     # Add AI advice to one-shot process
     try:
@@ -278,14 +279,11 @@ async def api_extract(
     _SESSIONS[session_id] = session
     _save_session(session_id, session)
 
-    # Auto-label boards for better review UX
-    try:
-        labels = ai_module.label_parts([_board_payload(b) for b in result.boards])
-        for board in result.boards:
-            if board.id in labels:
-                board.label = labels[board.id]
-    except Exception as e:
-        print(f"DEBUG: AI labeling failed in extract: {e}")
+    # Name parts the model left unnamed. Names the designer gave are kept.
+    labels = _ai_names_for_unnamed([_board_payload(b) for b in result.boards])
+    for board in result.boards:
+        if board.id in labels:
+            board.label = labels[board.id]
 
     boards_payload = []
     for board in result.boards:
@@ -439,6 +437,20 @@ async def api_download(session_id: str, filename: str):
 # ---------------------------------------------------------------------------
 # AI endpoints
 # ---------------------------------------------------------------------------
+
+
+def _ai_names_for_unnamed(boards: list[dict[str, Any]]) -> dict[str, str]:
+    """AI names for boards whose name is generic (Part 3, Mesh). Empty when AI is off."""
+    from .assistant import is_generic_name
+
+    unnamed = [b for b in boards if is_generic_name(str(b.get("label") or ""))]
+    if not unnamed or not ai_module.llm_available():
+        return {}
+    try:
+        return ai_module.label_parts(unnamed)
+    except Exception as exc:  # noqa: BLE001 - naming is a nicety, never block a plan on it
+        logger.warning("AI naming skipped: %s", exc)
+        return {}
 
 
 @app.post("/api/ai/label")

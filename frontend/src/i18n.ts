@@ -260,6 +260,38 @@ const HI: Record<string, string> = {
   'Your question': 'आपका सवाल',
   'Send': 'भेजें',
 
+  // ---- AI: assistant, voice, sketch photo ----
+  'Ask AI': 'AI से पूछें',
+  'Ask about this plan, or ask for a change. You approve every change before it is made.':
+    'इस प्लान के बारे में पूछें, या कोई बदलाव माँगें। हर बदलाव आपकी मंज़ूरी के बाद ही होता है।',
+  'Check this plan for problems': 'इस प्लान में कमी जाँचें',
+  'Put tape on the front edge of every part': 'हर पार्ट के सामने के किनारे पर टेप लगाएँ',
+  'Write a WhatsApp message for my customer': 'ग्राहक के लिए WhatsApp संदेश लिखें',
+  'How many sheets for 3 of these?': 'ऐसे 3 के लिए कितनी शीट लगेंगी?',
+  'The cutting plan will be made again with this change.': 'इस बदलाव के साथ कटिंग प्लान दोबारा बनेगा।',
+  'Saves the quote. Your customer sees only the total.': 'कोटेशन सेव होगा। ग्राहक को सिर्फ़ कुल रक़म दिखती है।',
+  'Apply this change': 'यह बदलाव लागू करें',
+  'Applied': 'लागू हो गया',
+  'Say it': 'बोलकर बताएँ',
+  'Stop and write it down': 'रोकें और लिख लें',
+  'Photo of a sketch': 'स्केच की फ़ोटो',
+  'Speak or type in any language, or photograph a drawing with the sizes written on it.':
+    'किसी भी भाषा में बोलें या लिखें, या नाप लिखी ड्रॉइंग की फ़ोटो लें।',
+  'Writing down what you said…': 'आपकी बात लिखी जा रही है…',
+  'Reading the sizes from your photo…': 'फ़ोटो से नाप पढ़े जा रहे हैं…',
+  'This is what we heard. Check the sizes and correct anything wrong.':
+    'हमने यह सुना। नाप जाँच लें और जो ग़लत हो उसे ठीक करें।',
+  'This is what we read from the photo. Check every size against your drawing.':
+    'फ़ोटो से हमने यह पढ़ा। हर नाप अपनी ड्रॉइंग से मिला लें।',
+  'We could not read every size. Add the missing ones:': 'हम हर नाप नहीं पढ़ पाए। बचे हुए नाप जोड़ें:',
+  'We could not use the microphone. Allow it in your browser, then try again.':
+    'माइक्रोफ़ोन इस्तेमाल नहीं हो सका। ब्राउज़र में इजाज़त दें, फिर कोशिश करें।',
+  'We could not hear that recording. Try again.': 'रिकॉर्डिंग सुनाई नहीं दी। फिर कोशिश करें।',
+  'We could not read that photo. Try again in better light.': 'फ़ोटो पढ़ी नहीं जा सकी। अच्छी रोशनी में फिर कोशिश करें।',
+  'height': 'ऊँचाई',
+  'width': 'चौड़ाई',
+  'depth': 'गहराई',
+
   // ---- Account and landing ----
   'Email': 'ईमेल',
   'Password': 'पासवर्ड',

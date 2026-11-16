@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { t } from '../i18n';
+import { getLanguage, t } from '../i18n';
 import {
   ChevronLeft, Check, Clock, Copy, FileText, FolderOpen, KeyRound,
-  LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Trash2, TriangleAlert, Ruler,
+  LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Sparkles, Trash2, TriangleAlert, Ruler,
 } from 'lucide-react';
 import UploadView from './UploadView';
 import Dashboard from './Dashboard';
 import LanguageSwitch from './LanguageSwitch';
 import LinearView from './LinearView';
+import ChatDrawer from './ChatDrawer';
 import { EdgeBandingCard, QuoteCard } from './PlanTools';
 import {
-  artifactDownloadUrl, createApiKey, createProject, createProjectFromDescription, deleteOffcut, updateProjectSettings, friendlyError, getProject,
+  aiAvailable, artifactDownloadUrl, askAssistant, createApiKey, createProject, createProjectFromDescription, deleteOffcut, updateProjectSettings, friendlyError, getProject,
   listApiKeys, listOffcuts, listProjects, rerunProject, resendVerification, revokeApiKey,
   saveProjectOffcuts, shareProject,
 } from '../api';
 import type {
   FinalizeResult, ProcessConfig, ProcessResult, SaaSApiKey, SaaSApiKeyCreated,
-  SaaSJob, SaaSOffcutList, SaaSProject, SaaSUser, PartOverrides, QuoteInput, QuoteTotals,
+  SaaSJob, SaaSOffcutList, SaaSProject, SaaSUser, PartOverrides, QuoteInput, QuoteTotals, AssistantProposal,
 } from '../types';
 
 interface Props {
@@ -27,6 +28,12 @@ interface Props {
 type Stage = 'list' | 'new' | 'job' | 'dashboard' | 'linear';
 
 const POLL_MS = 2500;
+const ASSISTANT_SUGGESTIONS = [
+  'Check this plan for problems',
+  'Put tape on the front edge of every part',
+  'Write a WhatsApp message for my customer',
+  'How many sheets for 3 of these?',
+];
 
 function statusTag(status: string) {
   if (status === 'done') return <span className="tag tag-ok">{t('Ready')}</span>;
@@ -47,6 +54,11 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   const [quoteTotals, setQuoteTotals] = useState<QuoteTotals | null>(null);
   const [loaded, setLoaded] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  // --- AI: shown only when the server has it switched on --------------------
+  const [aiOn, setAiOn] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  useEffect(() => { void aiAvailable().then(setAiOn); }, []);
 
   // --- M3: verification banner, share links, API keys ----------------------
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -214,6 +226,15 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     })();
   };
 
+  const handleApplyProposal = (proposal: AssistantProposal) => {
+    if (proposal.type === 'overrides') {
+      setAssistantOpen(false); // the plan is made again, so this screen is replaced
+      handleApplyBanding(proposal.overrides);
+    } else {
+      handleSaveQuote(proposal.quote);
+    }
+  };
+
   const handleRerun = (projectId: number) => {
     setBusy(t('Queuing a fresh run…'));
     setError(null);
@@ -236,6 +257,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   const backToList = () => {
     stopPolling();
     setStage('list');
+    setAssistantOpen(false);
     setActive(null);
     setResult(null);
     setFinalized(null);
@@ -356,6 +378,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           offcutShelf={shelf && shelf.count > 0 ? { count: shelf.count, totalAreaM2: shelf.total_area_m2 } : undefined}
           useOffcuts={useOffcuts}
           onUseOffcutsChange={setUseOffcuts}
+          aiEnabled={aiOn}
         />
         {busy && (
           <div className="overlay" role="alertdialog" aria-live="assertive" aria-label={busy}>
@@ -401,12 +424,29 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           tools={finalized?.gated ? undefined : (
             <>
               <EdgeBandingCard key={`band-${active.id}`} result={result} onApply={handleApplyBanding} busy={!!busy} />
-              <QuoteCard key={`quote-${active.id}`} result={result} saved={quote} totals={quoteTotals} onSave={handleSaveQuote} busy={!!busy} />
+              <QuoteCard key={`quote-${active.id}-${JSON.stringify(quote)}`} result={result} saved={quote} totals={quoteTotals} onSave={handleSaveQuote} busy={!!busy} />
             </>
           )}
           onForce={() => handleRerun(active.id)}
           error={error}
         />
+        {aiOn && !finalized?.gated && !assistantOpen && (
+          <button type="button" className="fab no-print" onClick={() => setAssistantOpen(true)}>
+            <Sparkles size={20} /> {t('Ask AI')}
+          </button>
+        )}
+        {assistantOpen && (
+          <>
+            <div className="overlay" style={{ zIndex: 65 }} onClick={() => setAssistantOpen(false)} />
+            <ChatDrawer
+              key={`chat-${active.id}`}
+              ask={(question, history) => askAssistant(active.id, question, history, getLanguage())}
+              onApply={handleApplyProposal}
+              suggestions={ASSISTANT_SUGGESTIONS}
+              onClose={() => setAssistantOpen(false)}
+            />
+          </>
+        )}
       </main>
     );
   }

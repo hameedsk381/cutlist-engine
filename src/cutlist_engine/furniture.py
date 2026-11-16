@@ -108,6 +108,67 @@ def _find_count(text: str, words: str) -> int | None:
     return int(raw) if raw.isdigit() else _WORD_NUMBERS[raw]
 
 
+_KIND_PHRASES = {
+    "wardrobe": "Wardrobe", "tall_unit": "Tall unit", "base_cabinet": "Kitchen base unit",
+    "wall_cabinet": "Wall cabinet", "loft": "Loft", "bookshelf": "Bookshelf", "cabinet": "Cabinet",
+}
+_COUNT_LIMITS = {"shelves": 40, "shutters": 12, "drawers": 12, "partitions": 10}
+
+
+def clean_params(raw: dict[str, Any]) -> dict[str, Any]:
+    """Keep only well-formed furniture parameters from model output.
+
+    Sizes must be positive numbers, counts whole numbers within the layout
+    limits, and the kind one we know. Everything else is dropped, so a model
+    can never push a malformed value into the carcass rules.
+    """
+    cleaned: dict[str, Any] = {}
+    if not isinstance(raw, dict):
+        return cleaned
+    if raw.get("kind") in KINDS:
+        cleaned["kind"] = raw["kind"]
+    for key in ("height", "width", "depth", "thickness", "plinth"):
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < value < 10000:
+            cleaned[key] = float(value)
+    if raw.get("plinth") == 0:
+        cleaned["plinth"] = 0.0
+    for key, limit in _COUNT_LIMITS.items():
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value == int(value) and 0 <= value <= limit:
+            cleaned[key] = int(value)
+    return cleaned
+
+
+def sentence_from_params(params: dict[str, Any]) -> tuple[str, list[str]]:
+    """Write cleaned parameters as a description the rule parser reads.
+
+    Returns the sentence and the overall sizes that are still missing. Used to
+    show a person what was read from a sketch, in words they can correct.
+    """
+    params = clean_params(params)
+    pieces = [_KIND_PHRASES[params.get("kind", "cabinet")]]
+    for key, word in (("height", "high"), ("width", "wide"), ("depth", "deep")):
+        if key in params:
+            pieces.append(f"{params[key]:g} {word}")
+    sentence = " ".join(pieces[:2]) + ("" if len(pieces) <= 2 else ", " + ", ".join(pieces[2:]))
+    extras = []
+    for key, one, many in (
+        ("shelves", "shelf", "shelves"), ("shutters", "shutter", "shutters"),
+        ("drawers", "drawer", "drawers"), ("partitions", "partition", "partitions"),
+    ):
+        if key in params and (params[key] or key == "shutters"):
+            extras.append(f"{params[key]} {one if params[key] == 1 else many}")
+    if "thickness" in params:
+        extras.append(f"{params['thickness']:g} mm ply")
+    if "plinth" in params:
+        extras.append("no skirting" if params["plinth"] == 0 else f"skirting {params['plinth']:g}")
+    if extras:
+        sentence += ", " + ", ".join(extras)
+    missing = [key for key in ("height", "width", "depth") if key not in params]
+    return sentence, missing
+
+
 def parse_spec(
     description: str,
     thickness: float = 18.0,
@@ -148,19 +209,33 @@ def parse_spec(
     if re.search(r"\bopen\b|without (shutters?|doors?)", text):
         counts["shutters"] = 0
 
-    if llm_extract is not None and (any(v is None for v in found.values()) or kind == "cabinet"):
+    # The rules only read English. Anything they cannot read fully (another
+    # language, a voice note, unusual wording) goes to the model for the
+    # missing parameters only. Rule-read values always win.
+    other_script = any(ord(ch) > 127 and ch.isalpha() for ch in description)
+    ai_thickness: float | None = None
+    ai_plinth: float | None = None
+    if llm_extract is not None and (
+        any(v is None for v in found.values()) or kind == "cabinet" or other_script
+    ):
         try:
-            extra = llm_extract(description) or {}
+            extra = clean_params(llm_extract(description) or {})
         except Exception:  # noqa: BLE001 - the rules' own error below is clearer
             extra = {}
+        ai_sizes = []
         for key in ("height", "width", "depth"):
-            if found.get(key) is None and isinstance(extra.get(key), (int, float)) and extra[key] > 0:
-                found[key] = float(extra[key])
+            if found.get(key) is None and key in extra:
+                found[key] = extra[key]
+                ai_sizes.append(f"{key} {extra[key]:g} mm")
         for key in counts:
-            if counts[key] is None and isinstance(extra.get(key), int) and extra[key] >= 0:
+            if counts[key] is None and key in extra:
                 counts[key] = extra[key]
-        if kind == "cabinet" and extra.get("kind") in KINDS:
+        if kind == "cabinet" and "kind" in extra:
             kind = extra["kind"]
+        ai_thickness = extra.get("thickness")
+        ai_plinth = extra.get("plinth")
+        if ai_sizes:
+            notes.append(f"AI read these sizes from your words: {', '.join(ai_sizes)}. Check them.")
 
     missing = [key for key in ("height", "width", "depth") if not found.get(key)]
     if missing:
@@ -172,8 +247,10 @@ def parse_spec(
     board = re.search(rf"{_NUM}\s*mm\s*(?:ply|plywood|board|mdf|carcass|thick)", text)
     if board:
         thickness = float(board.group(1))
+    elif ai_thickness:
+        thickness = ai_thickness
 
-    plinth = DEFAULT_PLINTH.get(kind, 0.0)
+    plinth = DEFAULT_PLINTH.get(kind, 0.0) if ai_plinth is None else ai_plinth
     skirting = re.search(rf"(?:skirting|plinth|kicker)\s*(?:of|is|=|:)?\s*{_NUM}|{_NUM}\s*(?:mm)?\s*(?:skirting|plinth|kicker)", text)
     if re.search(r"no (skirting|plinth|kicker)", text):
         plinth = 0.0

@@ -11,6 +11,7 @@ import LandingView from './components/LandingView';
 import ProjectsView from './components/ProjectsView';
 import {
   clearSaasToken, describeToModel, extractBoards, finalizeSession, friendlyError, getSaasToken, saasMe,
+  aiChat,
 } from './api';
 import type {
   AppView, ExtractResult, FinalizeResult, ProcessConfig, ProcessResult, ReviewDecisions, SaaSUser,
@@ -284,7 +285,10 @@ export default function App() {
       {chatOpen && result && (
         <>
           <div className="overlay" style={{ zIndex: 65 }} onClick={() => setChatOpen(false)} />
-          <ChatDrawer context={result} sessionId={sessionId} onClose={() => setChatOpen(false)} />
+          <ChatDrawer
+            ask={async (question, history) => ({ reply: await aiChat(question, result, history, sessionId), proposals: [] })}
+            onClose={() => setChatOpen(false)}
+          />
         </>
       )}
     </div>

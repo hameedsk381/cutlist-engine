@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import type { DragEvent } from 'react';
-import { ArrowRight, Info, Box, ChevronRight, CircleCheck, PenLine, TriangleAlert, Upload, X } from 'lucide-react';
+import { ArrowRight, Camera, Info, Box, ChevronRight, CircleCheck, LoaderCircle, Mic, PenLine, Square, TriangleAlert, Upload, X } from 'lucide-react';
+import { friendlyError, readSketch, transcribeSpeech } from '../api';
 import type { ProcessConfig } from '../types';
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
   offcutShelf?: { count: number; totalAreaM2: number };
   useOffcuts?: boolean;
   onUseOffcutsChange?: (value: boolean) => void;
+  /** Shows the voice and sketch-photo buttons. Only when the server has AI on. */
+  aiEnabled?: boolean;
 }
 
 const SHEETS = [
@@ -30,7 +33,7 @@ const EXAMPLES = [
 
 export default function UploadView({
   onUploadFile, onDescribe, error, busy,
-  offcutShelf, useOffcuts = false, onUseOffcutsChange,
+  offcutShelf, useOffcuts = false, onUseOffcutsChange, aiEnabled = false,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<'file' | 'describe'>('file');
@@ -38,6 +41,68 @@ export default function UploadView({
   const [fileError, setFileError] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [dragOver, setDragOver] = useState(false);
+
+  // ---- AI helpers for the describe box. Both only fill in the text; the
+  // person reads it, corrects it and then makes the plan as usual.
+  const photoRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [aiBusy, setAiBusy] = useState<string | null>(null);
+  const [aiNote, setAiNote] = useState<{ kind: 'info' | 'danger'; text: string } | null>(null);
+  const canRecord = typeof window !== 'undefined' && 'MediaRecorder' in window && !!navigator.mediaDevices?.getUserMedia;
+
+  useEffect(() => () => { recorderRef.current?.stream.getTracks().forEach(track => track.stop()); }, []);
+
+  const startRecording = async () => {
+    setAiNote(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setAiNote({ kind: 'danger', text: t('We could not use the microphone. Allow it in your browser, then try again.') });
+      return;
+    }
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+      stream.getTracks().forEach(track => track.stop());
+      recorderRef.current = null;
+      setRecording(false);
+      const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+      if (audio.size === 0) return;
+      setAiBusy(t('Writing down what you said…'));
+      transcribeSpeech(audio)
+        .then(text => {
+          setDescription(d => (d.trim() ? `${d.trim()} ${text}` : text));
+          setAiNote({ kind: 'info', text: t('This is what we heard. Check the sizes and correct anything wrong.') });
+        })
+        .catch(err => setAiNote({ kind: 'danger', text: friendlyError(err, t('We could not hear that recording. Try again.')) }))
+        .finally(() => setAiBusy(null));
+    };
+    recorderRef.current = recorder;
+    recorder.start();
+    setRecording(true);
+    // A description is one or two sentences; stop a forgotten recording.
+    window.setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 60_000);
+  };
+
+  const stopRecording = () => { if (recorderRef.current?.state === 'recording') recorderRef.current.stop(); };
+
+  const pickPhoto = (photo: File | undefined) => {
+    if (!photo) return;
+    setAiNote(null);
+    setAiBusy(t('Reading the sizes from your photo…'));
+    readSketch(photo)
+      .then(({ description: text, missing }) => {
+        setDescription(text);
+        setAiNote(missing.length > 0
+          ? { kind: 'danger', text: `${t('We could not read every size. Add the missing ones:')} ${missing.map(m => t(m)).join(', ')}.` }
+          : { kind: 'info', text: t('This is what we read from the photo. Check every size against your drawing.') });
+      })
+      .catch(err => setAiNote({ kind: 'danger', text: friendlyError(err, t('We could not read that photo. Try again in better light.')) }))
+      .finally(() => setAiBusy(null));
+  };
 
   const [sheet, setSheet] = useState({ w: 2440, h: 1220 });
   const [customSheet, setCustomSheet] = useState(false);
@@ -148,6 +213,33 @@ export default function UploadView({
               placeholder={t('Example: Wardrobe 2100 high, 1200 wide, 600 deep, 2 shutters, 4 shelves')}
             />
             <span className="field-help">{t('Give height, width and depth in mm, and how many shelves, shutters or drawers.')}</span>
+            {aiEnabled && (
+              <>
+                <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => { pickPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+                <div className="row ai-inputs">
+                  {canRecord && (recording ? (
+                    <button type="button" className="btn btn-danger is-recording" onClick={stopRecording}>
+                      <Square size={18} /> {t('Stop and write it down')}
+                    </button>
+                  ) : (
+                    <button type="button" className="btn" disabled={!!aiBusy} onClick={startRecording}>
+                      <Mic size={18} /> {t('Say it')}
+                    </button>
+                  ))}
+                  <button type="button" className="btn" disabled={!!aiBusy || recording} onClick={() => photoRef.current?.click()}>
+                    <Camera size={18} /> {t('Photo of a sketch')}
+                  </button>
+                  {aiBusy && <span className="small muted row" role="status"><LoaderCircle size={16} className="spinner" /> {aiBusy}</span>}
+                </div>
+                <span className="field-help">{t('Speak or type in any language, or photograph a drawing with the sizes written on it.')}</span>
+                {aiNote && (
+                  <div className={`notice notice-${aiNote.kind}`} role={aiNote.kind === 'danger' ? 'alert' : 'status'}>
+                    {aiNote.kind === 'danger' ? <TriangleAlert size={20} /> : <CircleCheck size={20} />}
+                    <div className="small">{aiNote.text}</div>
+                  </div>
+                )}
+              </>
+            )}
             <div className="chips">
               {EXAMPLES.map(ex => (
                 <button key={ex} type="button" className="chip" style={{ fontWeight: 500, fontSize: 14 }} onClick={() => setDescription(ex)}>

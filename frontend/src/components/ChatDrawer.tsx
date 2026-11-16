@@ -1,27 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import ReactMarkdown from 'react-markdown';
-import { LoaderCircle, Send, X } from 'lucide-react';
-import { aiChat, friendlyError } from '../api';
+import { Check, LoaderCircle, Send, Sparkles, X } from 'lucide-react';
+import { friendlyError } from '../api';
+import type { AssistantAnswer, AssistantProposal } from '../types';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  proposals?: AssistantProposal[];
+}
 
 interface Props {
-  context: unknown;
-  sessionId?: string;
+  /** Sends one question with the conversation so far. */
+  ask: (question: string, history: { role: string; content: string }[]) => Promise<AssistantAnswer>;
+  /** Saves a proposed change. Without it, proposals are not offered. */
+  onApply?: (proposal: AssistantProposal) => void;
+  suggestions?: string[];
   onClose: () => void;
 }
 
-interface Message { role: 'user' | 'assistant'; content: string; }
-
-const SUGGESTIONS = [
+const DEFAULT_SUGGESTIONS = [
   'How many sheets for 3 of these?',
   'Which edges should get edge banding?',
   'What hardware do I need?',
 ];
 
-export default function ChatDrawer({ context, sessionId, onClose }: Props) {
+export default function ChatDrawer({ ask, onApply, suggestions = DEFAULT_SUGGESTIONS, onClose }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [applied, setApplied] = useState<Set<string>>(new Set());
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -41,13 +50,19 @@ export default function ChatDrawer({ context, sessionId, onClose }: Props) {
     setInput('');
     setSending(true);
     try {
-      const answer = await aiChat(question, context, history, sessionId);
-      setMessages(m => [...m, { role: 'assistant', content: answer }]);
+      const answer = await ask(question, history);
+      setMessages(m => [...m, { role: 'assistant', content: answer.reply, proposals: answer.proposals }]);
     } catch (err) {
       setMessages(m => [...m, { role: 'assistant', content: friendlyError(err, 'Sorry, I could not answer that just now. Please try again.') }]);
     } finally {
       setSending(false);
     }
+  };
+
+  const apply = (key: string, proposal: AssistantProposal) => {
+    if (!onApply || applied.has(key)) return;
+    setApplied(prev => new Set(prev).add(key));
+    onApply(proposal);
   };
 
   return (
@@ -63,15 +78,36 @@ export default function ChatDrawer({ context, sessionId, onClose }: Props) {
       <div className="drawer-body" aria-live="polite">
         {messages.length === 0 && (
           <>
-            <p className="muted">{t('Ask anything about this cutting plan, the material or how to build it.')}</p>
+            <p className="muted">
+              {onApply
+                ? t('Ask about this plan, or ask for a change. You approve every change before it is made.')
+                : t('Ask anything about this cutting plan, the material or how to build it.')}
+            </p>
             <div className="chips">
-              {SUGGESTIONS.map(s => <button key={s} type="button" className="chip" style={{ fontSize: 14 }} onClick={() => send(s)}>{s}</button>)}
+              {suggestions.map(s => <button key={s} type="button" className="chip" style={{ fontSize: 14 }} onClick={() => send(t(s))}>{t(s)}</button>)}
             </div>
           </>
         )}
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role === 'user' ? 'msg-user' : 'msg-bot'}`}>
             {m.role === 'user' ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
+            {onApply && m.proposals?.map((p, j) => {
+              const key = `${i}-${j}`;
+              const done = applied.has(key);
+              return (
+                <div key={key} className="proposal">
+                  <div className="proposal-title"><Sparkles size={16} /> {p.title}</div>
+                  <div className="small muted">
+                    {p.type === 'overrides'
+                      ? t('The cutting plan will be made again with this change.')
+                      : t('Saves the quote. Your customer sees only the total.')}
+                  </div>
+                  <button type="button" className="btn btn-primary btn-block" disabled={done} onClick={() => apply(key, p)}>
+                    {done ? <><Check size={18} /> {t('Applied')}</> : t('Apply this change')}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ))}
         {sending && <div className="msg msg-bot"><LoaderCircle size={18} className="spinner" /></div>}

@@ -438,6 +438,28 @@ table.cut .qty { font-weight: 800; font-size: 17px; }
 .msg-user { align-self: flex-end; background: var(--primary); color: var(--on-primary); border-bottom-right-radius: 4px; }
 .msg-bot { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 
+.proposal {
+  margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--surface);
+  border: 1px solid var(--primary); display: flex; flex-direction: column; gap: 8px;
+}
+.proposal-title { display: flex; gap: 8px; align-items: flex-start; font-weight: 600; }
+.proposal-title svg { flex-shrink: 0; margin-top: 3px; color: var(--primary); }
+.msg:has(.proposal) { max-width: 100%; }
+
+.fab {
+  position: fixed; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 40;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 22px;
+  border: 0; border-radius: 999px; background: var(--primary); color: var(--on-primary);
+  font: inherit; font-weight: 700; cursor: pointer; box-shadow: var(--shadow-lg);
+  transition: transform 150ms ease-out;
+}
+.fab:hover { transform: translateY(-2px); }
+.fab:focus-visible { outline: 3px solid var(--primary-soft); outline-offset: 2px; }
+
+.ai-inputs { flex-wrap: wrap; }
+.is-recording { border-color: var(--danger); background: var(--danger-soft); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--danger-soft); } }
+
 .fade-in { animation: fade-in 220ms ease-out; }
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
@@ -449,7 +471,7 @@ table.cut .qty { font-weight: 800; font-size: 17px; }
 
 @media print {
   body { background: #fff; }
-  .topbar, .actionbar, .no-print, .overlay, .drawer { display: none !important; }
+  .topbar, .actionbar, .no-print, .overlay, .drawer, .fab { display: none !important; }
   .page { padding: 0; max-width: none; }
   .card, .stat { box-shadow: none; break-inside: avoid; }
   .result-grid { grid-template-columns: 1fr; }

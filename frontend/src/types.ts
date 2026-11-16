@@ -252,3 +252,13 @@ export interface SaaSOffcutList {
   count: number;
   total_area_m2: number;
 }
+
+/** A change the assistant suggests. It is saved only when the user presses Apply. */
+export type AssistantProposal =
+  | { type: 'overrides'; title: string; overrides: PartOverrides }
+  | { type: 'quote'; title: string; quote: QuoteInput };
+
+export interface AssistantAnswer {
+  reply: string;
+  proposals: AssistantProposal[];
+}

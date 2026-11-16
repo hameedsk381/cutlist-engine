@@ -1,51 +1,287 @@
-"""AI-powered features for the cutlist engine using Groq.
+"""The AI layer. Every call to a language model goes through this file.
 
-Three capabilities:
-  1. label_parts()       — Auto-name boards from dimensions + source objects
-  2. extract_furniture_params() — Natural language → size/count parameters only
-  3. chat()              — Context-aware workshop assistant
+Ground rule: a model reads and writes language, code does the arithmetic.
+Models are used to
+  - read a furniture description in any language into parameters,
+  - read a photo of a hand sketch into the same parameters,
+  - turn speech into text,
+  - name parts, and
+  - answer questions about a plan and *propose* changes to it.
+They never produce panel sizes, sheet counts or prices. Those come from
+`furniture.py`, the nesting engine and `saas/quote.py`, and every proposed
+change is validated in code and applied only when the user confirms it.
+
+Provider: Groq (https://console.groq.com). Model ids are read from the
+environment so a retired model can be replaced without a code change:
+
+  CUTLIST_AI_MODEL          text and JSON   (default openai/gpt-oss-120b)
+  CUTLIST_AI_VISION_MODEL   image input     (default qwen/qwen3.8-27b)
+  CUTLIST_AI_SPEECH_MODEL   speech to text  (default whisper-large-v3-turbo)
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_MODEL_FAST = "meta-llama/llama-4-scout-17b-16e-instruct"
-_MODEL_CHAT = "meta-llama/llama-4-scout-17b-16e-instruct"
+DEFAULT_TEXT_MODEL = "openai/gpt-oss-120b"
+DEFAULT_VISION_MODEL = "qwen/qwen3.8-27b"
+DEFAULT_SPEECH_MODEL = "whisper-large-v3-turbo"
+
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_AUDIO_BYTES = 20 * 1024 * 1024
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+LANGUAGES = {
+    "en": "English",
+    "hi": "Hindi in Devanagari script, in simple workshop words. Keep part names, numbers and units exactly as given",
+}
+
+
+class AIError(RuntimeError):
+    """An AI call could not be completed. The message is safe to show a user."""
+
+
+def text_model() -> str:
+    return os.environ.get("CUTLIST_AI_MODEL") or DEFAULT_TEXT_MODEL
+
+
+def vision_model() -> str:
+    return os.environ.get("CUTLIST_AI_VISION_MODEL") or DEFAULT_VISION_MODEL
+
+
+def speech_model() -> str:
+    return os.environ.get("CUTLIST_AI_SPEECH_MODEL") or DEFAULT_SPEECH_MODEL
+
+
+def llm_available() -> bool:
+    if not os.environ.get("GROQ_API_KEY"):
+        return False
+    try:
+        import groq  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def status() -> dict[str, Any]:
+    return {
+        "available": llm_available(),
+        "text_model": text_model(),
+        "vision_model": vision_model(),
+        "speech_model": speech_model(),
+    }
 
 
 def _client() -> Any:
     try:
         from groq import Groq
     except ImportError as exc:
-        raise RuntimeError(
+        raise AIError(
             "AI features require the optional Groq client. "
             "Install it with: python -m pip install -e .[ai]"
         ) from exc
 
     api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
-        raise RuntimeError(
+        raise AIError(
             "GROQ_API_KEY environment variable is not set. "
             "Get a free key at https://console.groq.com/keys"
         )
-    return Groq(api_key=api_key)
+    return Groq(api_key=api_key, timeout=45.0)
+
+
+def _complete(
+    messages: list[dict[str, Any]],
+    *,
+    model: str | None = None,
+    json_mode: bool = False,
+    max_tokens: int = 2048,
+    temperature: float = 0.2,
+) -> str:
+    kwargs: dict[str, Any] = {
+        "model": model or text_model(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    client = _client()
+    try:
+        resp = client.chat.completions.create(**kwargs)
+    except Exception as exc:  # noqa: BLE001 - provider errors vary by SDK version
+        logger.error("AI request failed (%s): %s", kwargs["model"], exc)
+        raise AIError("The AI service did not answer. Try again in a moment.") from exc
+    return resp.choices[0].message.content or ""
+
+
+def _loads(content: str) -> dict[str, Any]:
+    """Parse a model's JSON answer, tolerating code fences and stray prose."""
+    text = content.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return {}
+        try:
+            value = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+    return value if isinstance(value, dict) else {}
 
 
 # ---------------------------------------------------------------------------
-# 1. Smart Part Naming
+# 1. Description or sketch -> furniture parameters (never panel sizes)
+# ---------------------------------------------------------------------------
+
+_PARAM_KEYS = """\
+{"kind": "wardrobe|tall_unit|base_cabinet|wall_cabinet|loft|bookshelf|cabinet",
+ "height": <mm>, "width": <mm>, "depth": <mm>,
+ "shelves": <int>, "shutters": <int>, "drawers": <int>, "partitions": <int>,
+ "thickness": <board thickness in mm>, "plinth": <skirting height in mm>}"""
+
+_PARAMS_SYSTEM = f"""\
+You read a description of ONE piece of cabinet furniture and extract its
+overall parameters. The text may be in English, Hindi, Hinglish, Telugu, Tamil,
+Marathi or any other language, in any script, and may come from speech, so
+expect spelling mistakes. Do NOT calculate any panel sizes.
+
+Respond ONLY with a JSON object using these keys, omitting every key the text
+does not state:
+
+{_PARAM_KEYS}
+
+Rules:
+- Convert feet, inches, cm and metres to mm (1 ft = 304.8 mm, 1 in = 25.4 mm).
+  A bare number is already mm.
+- height is floor to top, width is side to side, depth is front to back.
+- almirah / almari / cupboard = wardrobe. Doors / palla / shutter = shutters.
+  khana / rack / shelf = shelves. Daraz = drawers.
+- Never guess a size that is not in the text.
+"""
+
+
+def extract_furniture_params(description: str) -> dict[str, Any]:
+    """Pull overall size and counts out of free text in any language.
+
+    The caller (`furniture.parse_spec`) validates every value and does all
+    panel arithmetic itself.
+    """
+    content = _complete(
+        [
+            {"role": "system", "content": _PARAMS_SYSTEM},
+            {"role": "user", "content": description[:2000]},
+        ],
+        json_mode=True,
+        max_tokens=1024,
+        temperature=0.0,
+    )
+    return _loads(content)
+
+
+_SKETCH_SYSTEM = f"""\
+You are shown a photo of a hand-drawn sketch, a printed drawing or a
+screenshot of ONE piece of cabinet furniture, with sizes written on it.
+Read the overall parameters. Do NOT calculate any panel sizes.
+
+Respond ONLY with a JSON object. Use these keys, omitting every key you cannot
+read with confidence:
+
+{_PARAM_KEYS}
+
+Also include "readable": true or false. Use false when the picture is not a
+furniture drawing or the sizes cannot be read.
+
+Rules:
+- Convert feet, inches and cm to mm (1 ft = 304.8 mm, 1 in = 25.4 mm). A bare
+  number on a drawing in India is usually mm when above 100, otherwise feet or
+  inches as marked.
+- Count shelves, shutters and drawers only if they are drawn or written.
+- Never guess a size that is not written in the picture.
+"""
+
+
+def read_sketch(image: bytes, mime_type: str) -> dict[str, Any]:
+    """Read furniture parameters from a photo of a sketch. Values are unvalidated."""
+    if mime_type not in IMAGE_TYPES:
+        raise ValueError("Use a JPG, PNG or WebP photo.")
+    if not image:
+        raise ValueError("The photo is empty.")
+    if len(image) > MAX_IMAGE_BYTES:
+        raise ValueError(f"The photo is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB.")
+    encoded = base64.b64encode(image).decode("ascii")
+    content = _complete(
+        [
+            {"role": "system", "content": _SKETCH_SYSTEM},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Read this furniture drawing. Answer with JSON only."},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}},
+                ],
+            },
+        ],
+        model=vision_model(),
+        json_mode=True,
+        max_tokens=1024,
+        temperature=0.0,
+    )
+    return _loads(content)
+
+
+# ---------------------------------------------------------------------------
+# 2. Speech -> text
+# ---------------------------------------------------------------------------
+
+_SPEECH_HINT = (
+    "A carpenter describing furniture: wardrobe, almirah, loft, kitchen base unit, "
+    "shutter, shelf, drawer, plywood, 2100 mm high, 7 feet, 18 mm."
+)
+
+
+def transcribe(audio: bytes, filename: str = "speech.webm", language: str | None = None) -> str:
+    """Turn a short voice note into text. The language is detected unless given."""
+    if not audio:
+        raise ValueError("The recording is empty.")
+    if len(audio) > MAX_AUDIO_BYTES:
+        raise ValueError("The recording is too long. Keep it under a minute.")
+    kwargs: dict[str, Any] = {
+        "file": (filename, audio),
+        "model": speech_model(),
+        "prompt": _SPEECH_HINT,
+        "response_format": "json",
+        "temperature": 0.0,
+    }
+    if language:
+        kwargs["language"] = language
+    client = _client()
+    try:
+        result = client.audio.transcriptions.create(**kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("AI transcription failed: %s", exc)
+        raise AIError("We could not hear that recording. Try again, closer to the microphone.") from exc
+    return (getattr(result, "text", "") or "").strip()
+
+
+# ---------------------------------------------------------------------------
+# 3. Part naming
 # ---------------------------------------------------------------------------
 
 _LABEL_SYSTEM = """\
-You are an Indian furniture and modular cabinetry expert. Given a list of boards extracted from a 3D model, 
+You are an Indian furniture and modular cabinetry expert. Given a list of boards extracted from a 3D model,
 assign each board a clear, human-readable label that a carpenter would recognise on an Indian shop floor.
 
 Rules:
-- Use common Indian woodworking terminology (Pooja Unit Panel, Loft Top, Wardrobe Shutter, Skirting, Carcass Side, Backer, Laminate Board, etc.)
+- Use common woodworking terms (Side, Top, Bottom, Shelf, Back, Shutter, Partition, Skirting, Drawer Front).
 - If source_objects hint at the component name, use that context.
 - If multiple boards share identical dimensions, differentiate them (Left Side, Right Side, Shelf 1, Shelf 2).
 - Keep labels SHORT (2-4 words max).
@@ -55,16 +291,7 @@ Rules:
 
 
 def label_parts(boards: list[dict[str, Any]]) -> dict[str, str]:
-    """Auto-name boards using LLM inference.
-
-    Args:
-        boards: list of board dicts with keys: id, length, width, thickness,
-                source_objects, confidence
-
-    Returns:
-        dict mapping board_id -> human-readable label
-    """
-    # Build a compact prompt — only send what the LLM needs
+    """Suggest a name for each board. Returns board_id -> label."""
     compact = []
     for b in boards:
         entry = {
@@ -75,89 +302,103 @@ def label_parts(boards: list[dict[str, Any]]) -> dict[str, str]:
         }
         src = b.get("source_objects", [])
         if src:
-            entry["source_objects"] = src[:3]  # limit context
+            entry["source_objects"] = src[:3]
         compact.append(entry)
 
-    user_msg = json.dumps(compact, indent=None)
-
-    try:
-        resp = _client().chat.completions.create(
-            model=_MODEL_FAST,
-            messages=[
-                {"role": "system", "content": _LABEL_SYSTEM},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2,
-            max_tokens=2048,
-            response_format={"type": "json_object"},
-        )
-        content = resp.choices[0].message.content or "{}"
-        result = json.loads(content)
-        return result.get("labels", {})
-    except Exception as e:
-        logger.error("AI labeling failed: %s", e)
-        raise
-
-
-# ---------------------------------------------------------------------------
-# 2. Natural Language -> furniture parameters (never panel sizes)
-# ---------------------------------------------------------------------------
-
-_PARAMS_SYSTEM = """\
-You read a furniture description and extract its parameters. Do NOT calculate
-any panel sizes. Respond ONLY with a JSON object using these keys, omitting any
-the text does not state:
-
-{"kind": "wardrobe|base_cabinet|wall_cabinet|loft|bookshelf|cabinet",
- "height": <mm>, "width": <mm>, "depth": <mm>,
- "shelves": <int>, "shutters": <int>, "partitions": <int>}
-
-Convert feet, inches and cm to mm. Respond with JSON only.
-"""
-
-
-def extract_furniture_params(description: str) -> dict[str, Any]:
-    """Pull overall size and counts out of free text.
-
-    Used only as a fallback when the rule-based parser in `furniture.py`
-    cannot find them. All panel arithmetic is done in code, not here.
-    """
-    resp = _client().chat.completions.create(
-        model=_MODEL_FAST,
-        messages=[
-            {"role": "system", "content": _PARAMS_SYSTEM},
-            {"role": "user", "content": description},
+    content = _complete(
+        [
+            {"role": "system", "content": _LABEL_SYSTEM},
+            {"role": "user", "content": json.dumps(compact, indent=None)},
         ],
-        temperature=0.0,
-        max_tokens=300,
-        response_format={"type": "json_object"},
+        json_mode=True,
+        max_tokens=4096,
     )
-    result = json.loads(resp.choices[0].message.content or "{}")
-    return result if isinstance(result, dict) else {}
-
-
-def llm_available() -> bool:
-    return bool(os.environ.get("GROQ_API_KEY"))
+    labels = _loads(content).get("labels", {})
+    known = {b["id"] for b in boards}
+    return {str(k): str(v).strip()[:80] for k, v in labels.items() if k in known and str(v).strip()}
 
 
 # ---------------------------------------------------------------------------
-# 3. Workshop Chat Assistant
+# 4. Plan assistant: answers questions and proposes changes
 # ---------------------------------------------------------------------------
 
-_CHAT_SYSTEM = """\
-You are a helpful woodworking and cabinetry assistant embedded in a cutlist optimization tool.
-You have access to the current project context (cutlist, sheets, material summary).
+_ASSISTANT_SYSTEM = """\
+You are the assistant inside CutList, a cutting-plan tool used by furniture
+workshops in India. You are given FACTS about one cutting plan. The facts were
+computed by the software and are correct.
 
-Rules:
-- Answer questions about the current project using the provided context.
-- Give practical, actionable advice a carpenter can use on the shop floor.
-- Use metric (mm) for all dimensions.
-- Be concise — carpenters are busy.
-- If asked to modify the cutlist, explain what changes to make but clarify you cannot
-  directly edit it (the user should re-upload or use the override system).
-- When doing calculations (material needed for N copies, etc.), show your working.
-- If the context is empty (no project loaded), still answer general woodworking questions.
+Respond ONLY with a JSON object:
+{"reply": "<your answer, short, plain markdown>", "actions": [ ... ]}
+
+How to answer
+- Use only numbers that appear in FACTS. Never work out sheet counts, tape
+  lengths, costs or totals yourself. If a number is not in FACTS, say the plan
+  must be re-run to know it.
+- Be brief and practical. The reader is a carpenter on a shop floor.
+- Reply in: {language}.
+- If asked for a message for the customer, write it ready to paste into
+  WhatsApp, using the saved quote total from FACTS if there is one. Never
+  reveal the workshop's costs or margin in a customer message.
+
+Proposing changes ("actions")
+Add an action only when the user asks for a change. You cannot apply anything:
+the user sees each proposal with an Apply button. Say in "reply" what you are
+proposing. Rows are the part numbers in FACTS. Allowed actions:
+
+1. Edge banding (tape on part edges):
+   {"type": "edge_band", "rows": "all" or [row numbers],
+    "edges": "front" | "long" | "all" | "none", "tape_mm": 0.5 to 2}
+   "front" = one long edge, "long" = both long edges, "all" = all four,
+   "none" = remove the tape. If the user gives no thickness use 2 for
+   shutters and drawer fronts and 0.5 for other parts, and say so.
+2. Rename a part:
+   {"type": "rename", "row": <row number>, "name": "<2 to 4 words>"}
+   When asked to name parts, name only rows whose name is generic
+   (Part 1, Object, Mesh, Group) using their size and thickness.
+3. Customer quote. Include only the fields the user gave:
+   {"type": "quote", "labour": <amount>, "hardware": <amount>,
+    "other": <amount>, "tape_rate": <price per metre>,
+    "margin_percent": <0 to 500>, "customer": "<name>", "note": "<text>"}
+
+Anything else (changing a part's size, adding or removing parts, changing the
+sheet size) cannot be done from here. Say so and say where it is done: sizes
+are changed in the design or the description, then the plan is made again.
+If no change is asked for, "actions" is [].
 """
+
+
+def assistant(
+    message: str,
+    facts: str,
+    history: list[dict[str, str]] | None = None,
+    language: str = "en",
+) -> dict[str, Any]:
+    """Answer a question about a plan. Returns {"reply": str, "actions": [raw dicts]}.
+
+    The actions are unvalidated model output; pass them through
+    `assistant.resolve_actions` before showing them to anyone.
+    """
+    system = _ASSISTANT_SYSTEM.replace("{language}", LANGUAGES.get(language, LANGUAGES["en"]))
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system},
+        {"role": "system", "content": f"FACTS\n{facts}"},
+    ]
+    for turn in (history or [])[-10:]:
+        if turn.get("role") in ("user", "assistant") and isinstance(turn.get("content"), str):
+            messages.append({"role": turn["role"], "content": turn["content"][:4000]})
+    messages.append({"role": "user", "content": message[:4000]})
+
+    content = _complete(messages, json_mode=True, max_tokens=4096, temperature=0.3)
+    parsed = _loads(content)
+    reply = parsed.get("reply")
+    if not isinstance(reply, str) or not reply.strip():
+        # The model ignored the JSON contract: show what it wrote, propose nothing.
+        return {"reply": content.strip() or "I could not answer that. Please ask again.", "actions": []}
+    actions = parsed.get("actions")
+    return {
+        "reply": reply.strip(),
+        "actions": [a for a in actions if isinstance(a, dict)][:20] if isinstance(actions, list) else [],
+    }
 
 
 def chat(
@@ -165,134 +406,43 @@ def chat(
     context: dict[str, Any] | None = None,
     history: list[dict[str, str]] | None = None,
 ) -> str:
-    """Context-aware workshop chat.
+    """Plain question answering about a plan (no proposals). Used by the single-user app."""
+    from .assistant import plan_facts
 
-    Args:
-        message: User's question
-        context: Current project data (cutlist, sheets, material_summary, boards)
-        history: Previous chat messages [{"role": "user"/"assistant", "content": "..."}]
-
-    Returns:
-        Assistant's response text
-    """
-    messages: list[dict[str, str]] = [{"role": "system", "content": _CHAT_SYSTEM}]
-
-    # Inject project context as a system message
-    if context:
-        ctx_summary = _build_context_summary(context)
-        messages.append({
-            "role": "system",
-            "content": f"Current project context:\n{ctx_summary}",
-        })
-
-    # Add conversation history
-    if history:
-        messages.extend(history[-10:])  # keep last 10 exchanges
-
-    messages.append({"role": "user", "content": message})
-
-    try:
-        resp = _client().chat.completions.create(
-            model=_MODEL_CHAT,
-            messages=messages,
-            temperature=0.4,
-            max_tokens=2048,
-        )
-        return resp.choices[0].message.content or "I couldn't generate a response."
-    except Exception as e:
-        logger.error("AI chat failed: %s", e)
-        raise
-
-
-def _build_context_summary(context: dict[str, Any]) -> str:
-    """Build a compact text summary of the current project for the LLM."""
-    parts = []
-
-    ms = context.get("material_summary", {})
-    if ms:
-        parts.append(
-            f"Material: {ms.get('sheet_count', '?')} sheets, "
-            f"{ms.get('utilization_percent', '?')}% utilization, "
-            f"{ms.get('waste_percent', '?')}% waste, "
-            f"reusable offcuts: {ms.get('reusable_offcut_area', 0):.2f} sq m, "
-            f"cost: {ms.get('currency', 'INR')} {ms.get('total_material_cost', 0):.2f}"
-        )
-
-    cutlist = context.get("cutlist", [])
-    if cutlist:
-        lines = []
-        for item in cutlist[:20]:  # limit to 20 items
-            label = ""
-            if item.get("labels"):
-                label = item["labels"][0] if isinstance(item["labels"], list) else str(item["labels"])
-            name = label or item.get("id", "?")
-            lines.append(
-                f"  {name}: {round(item.get('length', 0))}×{round(item.get('width', 0))}×"
-                f"{item.get('thickness', '?')}mm qty={item.get('quantity', 1)} "
-                f"material={item.get('material', 'default')}"
-            )
-        parts.append("Cutlist:\n" + "\n".join(lines))
-
-    sheets = context.get("sheets", [])
-    if sheets:
-        sheet_lines = []
-        for s in sheets[:10]:
-            part_count = len(s.get("parts", []))
-            sheet_lines.append(
-                f"  Sheet {s.get('sheet_id', '?')}: "
-                f"{round(s.get('width', 0))}×{round(s.get('height', 0))}mm, "
-                f"{part_count} parts, "
-                f"util={s.get('utilization_percent', '?')}%, "
-                f"waste={s.get('waste_percent', '?')}%"
-            )
-        parts.append("Sheets:\n" + "\n".join(sheet_lines))
-
-        # Include offcut details
-        for s in sheets[:10]:
-            offcuts = [o for o in s.get("offcuts", []) if o.get("reusable")]
-            if offcuts:
-                for o in offcuts:
-                    parts.append(
-                        f"  Sheet {s.get('sheet_id')}: reusable offcut "
-                        f"{round(o.get('width', 0))}×{round(o.get('height', 0))}mm"
-                    )
-
-    return "\n".join(parts) if parts else "No project loaded."
+    facts = plan_facts(context) if context else "No plan is loaded."
+    return assistant(message, facts, history)["reply"]
 
 
 # ---------------------------------------------------------------------------
-# 4. Expert Suggestions
+# 5. Tips shown on a finished plan
 # ---------------------------------------------------------------------------
 
 _SUGGEST_SYSTEM = """\
-You are an expert furniture manufacturer and modular kitchen engineer in India. 
-Analyze the following cutlist and nesting results. 
-Provide 3-5 concise, high-impact suggestions focused on Indian manufacturing practices (Plywood, Laminate, Edge Banding).
+You are an experienced modular furniture maker in India. You are given FACTS
+about one cutting plan, computed by software and correct.
 
-Focus on:
-1. Optimization: Can we save a 8x4 sheet (2440x1220mm)?
-2. Quality: Suggest BWP/BWR plywood for wet areas (kitchen/bath).
-3. Assembly: Suggest hardware (Hettich/Hafele/Ebco) or joinery tips.
-4. Finishing: PVC edge banding (0.5mm vs 2mm) or laminate grain matching.
-
-Format: Provide a list of bullet points. Keep it professional and brief.
+Write 3 to 5 short bullet points of practical advice for this job: saving
+material, edge banding, hardware, assembly order, moisture-resistant board for
+kitchens and bathrooms. Use only numbers that appear in FACTS and never work
+out new totals. No introduction and no closing line.
 """
 
 
-def suggest_improvements(context: dict[str, Any]) -> str:
-    """Analyze results and provide expert advice."""
-    ctx_summary = _build_context_summary(context)
+def suggest_improvements(context: dict[str, Any]) -> str | None:
+    """Short tips for a finished plan, or None when AI is off or fails."""
+    if not llm_available():
+        return None
+    from .assistant import plan_facts
+
     try:
-        resp = _client().chat.completions.create(
-            model=_MODEL_FAST,
-            messages=[
+        content = _complete(
+            [
                 {"role": "system", "content": _SUGGEST_SYSTEM},
-                {"role": "user", "content": f"Project Results:\n{ctx_summary}"},
+                {"role": "user", "content": f"FACTS\n{plan_facts(context)}"},
             ],
+            max_tokens=2048,
             temperature=0.4,
-            max_tokens=1024,
         )
-        return resp.choices[0].message.content or "No specific suggestions at this time."
-    except Exception as e:
-        logger.error("AI suggestion failed: %s", e)
-        return "Expert suggestions temporarily unavailable."
+    except AIError:
+        return None
+    return content.strip() or None
