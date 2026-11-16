@@ -49,9 +49,12 @@ RUN python -m pip install --no-cache-dir ".[cad,ai,saas]"
 COPY --from=frontend /app/dist/ ./frontend/dist/
 ENV CUTLIST_FRONTEND_DIR=/app/frontend/dist
 
-# Persistent review sessions live on a volume
+# Persistent review sessions + uploaded models/artifacts live on volumes.
+# Both mount points must pre-exist with correct ownership: Docker copies the
+# image's directory owner into a fresh named volume, and a root-owned
+# /data/storage would make the non-root app crash with PermissionError.
 ENV CUTLIST_SESSION_DIR=/data/sessions
-RUN mkdir -p /data/sessions \
+RUN mkdir -p /data/sessions /data/storage \
     && groupadd --system cutlist \
     && useradd --system --gid cutlist --create-home cutlist \
     && chown -R cutlist:cutlist /data /app
