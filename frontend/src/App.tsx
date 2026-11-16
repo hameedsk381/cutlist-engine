@@ -23,6 +23,8 @@ const STEPS: { view: AppView; label: string }[] = [
   { view: 'dashboard', label: 'Cutting plan' },
 ];
 
+const OPENED_BY_RESET_LINK = new URLSearchParams(window.location.search).has('reset');
+
 export default function App() {
   const [view, setView] = useState<AppView>('upload');
   const [busy, setBusy] = useState<string | null>(null);
@@ -30,14 +32,14 @@ export default function App() {
   const [designNotes, setDesignNotes] = useState<string[]>([]);
 
   // SaaS session: 'unknown' while we check for a stored token on load.
-  const [authState, setAuthState] = useState<'unknown' | 'anon' | 'auth' | 'saas' | 'legacy'>('unknown');
+  // A password-reset link goes straight to the sign-in form, even if someone is already signed in.
+  const [authState, setAuthState] = useState<'unknown' | 'anon' | 'auth' | 'saas' | 'legacy'>(
+    () => (OPENED_BY_RESET_LINK ? 'auth' : getSaasToken() ? 'unknown' : 'anon'),
+  );
   const [user, setUser] = useState<SaaSUser | null>(null);
 
   useEffect(() => {
-    if (!getSaasToken()) {
-      setAuthState('anon');
-      return;
-    }
+    if (OPENED_BY_RESET_LINK || !getSaasToken()) return; // 'auth' or 'anon' already
     saasMe()
       .then((u) => {
         setUser(u);

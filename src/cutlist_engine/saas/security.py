@@ -61,6 +61,39 @@ def decode_token(token: str) -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# Password reset links
+# ---------------------------------------------------------------------------
+
+_RESET_TTL = _dt.timedelta(hours=1)
+
+
+def _password_fingerprint(user: User) -> str:
+    """Changes whenever the password changes, so a reset link works once."""
+    return hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()[:16]
+
+
+def create_reset_token(user: User) -> str:
+    now = _dt.datetime.now(_dt.timezone.utc)
+    payload = {"sub": str(user.id), "purpose": "reset", "pw": _password_fingerprint(user),
+               "iat": now, "exp": now + _RESET_TTL}
+    return jwt.encode(payload, _secret, algorithm=_JWT_ALG)
+
+
+def user_for_reset_token(token: str, db: Session) -> User | None:
+    """The account a valid, unused, unexpired reset link belongs to, else None."""
+    try:
+        payload = jwt.decode(token, _secret, algorithms=[_JWT_ALG])
+        if payload.get("purpose") != "reset":
+            return None
+        user = db.get(User, int(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None
+    if user is None or payload.get("pw") != _password_fingerprint(user):
+        return None
+    return user
+
+
+# ---------------------------------------------------------------------------
 # API keys (for CNC shops / programmatic access)
 # ---------------------------------------------------------------------------
 

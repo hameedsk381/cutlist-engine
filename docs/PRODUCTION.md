@@ -41,6 +41,10 @@ No separate web server needed.
 | `CUTLIST_AI_VISION_MODEL` | `qwen/qwen3.8-27b` | Model that reads sketch photos. A preview model at the provider, so the most likely to change. |
 | `CUTLIST_AI_SPEECH_MODEL` | `whisper-large-v3-turbo` | Speech-to-text model for voice notes. |
 | `CUTLIST_AI_DAILY_LIMIT` | `200` | AI calls per user per day. Held in memory per process, so it resets on restart and is not a billing meter. |
+| `CUTLIST_CORS_ORIGINS` | *(any)* | Browser origins allowed to call the API, comma separated. |
+| `CUTLIST_RATE_LIMIT` | `on` | `off` disables sign-in and sign-up limits. |
+| `CUTLIST_TRUST_PROXY` | *(auto)* | `1` always read the client address from `X-Forwarded-For`, `0` never. |
+| `CUTLIST_APP_URL` | *(unset)* | **Set in production.** Public base URL used in verification and password-reset emails. |
 | `CUTLIST_MAX_UPLOAD_MB` | `100` | Rejects uploads above this size. |
 | `CUTLIST_MAX_TRIANGLES` | `500000` | Rejects geometry too expensive to process. |
 | `CUTLIST_SESSION_TTL_HOURS` | `168` | Stale session folders are cleaned on startup. |
@@ -111,20 +115,54 @@ ports:
 
 ## CORS
 
-`server.py` currently allows `*` origins. When serving the SPA from the same
-origin (default in this image) this is harmless, but if you split the frontend
-onto its own domain, tighten `allow_origins` to that domain.
+By default the API answers browsers from any origin. That is safe here because
+sign-in is by bearer token, never a cookie, so another site has nothing to ride
+on. To allow only your own site, set `CUTLIST_CORS_ORIGINS` to a comma-separated
+list (for example `https://cutlist.example.com`).
+
+## Public-launch safeguards
+
+- **Rate limits.** Sign-in (10 per 5 minutes), sign-up (10 per hour), password
+  reset (5 and 10 per hour) and account deletion (5 per hour) are limited per
+  client address, in memory per process. Behind a proxy on the same host or Docker
+  network the address is read from the last `X-Forwarded-For` entry, which your
+  proxy must set (nginx: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`).
+  `CUTLIST_TRUST_PROXY=1` always trusts it, `0` never does, `CUTLIST_RATE_LIMIT=off`
+  disables the limits. Add a proxy-level limit for anything stronger.
+- **Headers.** Every response carries `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` and `Permissions-Policy`, and `Strict-Transport-Security` when the
+  request came over HTTPS (directly or via `X-Forwarded-Proto`). There is no
+  Content-Security-Policy yet.
+- **Password reset** needs working SMTP and `CUTLIST_APP_URL`: the emailed link is
+  `CUTLIST_APP_URL/?reset=TOKEN`, valid for one hour and one use. Without SMTP the link
+  is only written to the server log. Existing sign-in tokens stay valid for up to 7 days after a reset.
+- **Deleting data.** Users delete a project from their project list and their whole
+  account from the Account section; both remove files from storage. The database row and
+  files go immediately; copies inside your backups age out on your backup schedule.
+- **Legal pages.** `terms.html` and `privacy.html` are served from the frontend's `public/`
+  folder. Fill in the `[bracketed]` values and have them reviewed before launch.
 
 ## Backups / data to keep
 
-The only state is the sessions volume:
+Three things hold state. Back up the first two daily and test a restore.
+
+| What | Volume | Contains |
+|---|---|---|
+| Database | `cutlist-db` (Postgres) | accounts, projects, plans, offcuts |
+| Files | `cutlist-storage` | uploaded models and every generated file |
+| Sessions | `cutlist-sessions` | short-lived review sessions (optional) |
 
 ```bash
-docker run --rm -v cutlist-engine_cutlist-sessions:/data -v "$PWD:/backup" \
-    alpine tar czf /backup/sessions.tgz -C /data .
+# Database (a consistent dump, no downtime)
+docker exec cutlist-db pg_dump -U cutlist cutlist | gzip > cutlist-db-$(date +%F).sql.gz
+
+# Files
+docker run --rm -v cutlist-engine_cutlist-storage:/data -v "$PWD:/backup"     alpine tar czf /backup/storage-$(date +%F).tgz -C /data .
 ```
 
-Everything else (code, frontend) is in the image.
+Restore the dump with `gunzip -c FILE | docker exec -i cutlist-db psql -U cutlist cutlist`
+into an empty database. Keep copies off the server. Volume names carry your
+compose project prefix; check `docker volume ls`.
 
 ## Deploy workflow
 

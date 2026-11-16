@@ -1,0 +1,13 @@
+:root { color-scheme: light dark; }
+body { margin: 0; font: 16px/1.6 "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif; background: #f7f5f0; color: #1d1d1b; }
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 8px 0; }
+h2 { font-size: 19px; margin: 28px 0 6px; }
+a { color: #0f766e; }
+li { margin: 4px 0; }
+.muted { color: #5b5b55; }
+@media (prefers-color-scheme: dark) {
+  body { background: #16181a; color: #ecece8; }
+  a { color: #5eead4; }
+  .muted { color: #a8a8a0; }
+}

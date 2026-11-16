@@ -55,3 +55,11 @@ tests/_tmp_out/
 *.swo
 !tests/fixtures/*.obj
 !tests/real_models/**/*.obj
+
+# Scratch files and private samples stay out of the repo
+/test.py
+/test2.py
+/debug_surfaces.py
+WhatsApp Image*
+*_plan2cad.dxf
+/house_plan.dxf

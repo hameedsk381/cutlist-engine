@@ -63,3 +63,16 @@ def send_verification_email(to: str, token: str) -> None:
             "If you didn't create this account, ignore this email."
         ),
     )
+
+
+def send_password_reset_email(to: str, token: str) -> None:
+    link = f"{APP_URL or 'http://localhost:8000'}/?reset={token}"
+    send_email(
+        to,
+        "Reset your CutList password",
+        (
+            "Someone asked to reset the password for this CutList account.\n\n"
+            f"Choose a new password (the link works once, for one hour): {link}\n\n"
+            "If this was not you, ignore this email. Your password has not changed."
+        ),
+    )

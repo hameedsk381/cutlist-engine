@@ -98,13 +98,31 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Cutlist Engine API", version="1.2.0", lifespan=lifespan)
 
+# CUTLIST_CORS_ORIGINS="https://app.example.com,https://other.example.com" limits which sites
+# may call the API from a browser. Unset keeps it open ("*"), which is safe here because
+# sign-in is by bearer token, never a cookie, so a foreign page has nothing to ride on.
+_CORS_ORIGINS = [o.strip() for o in os.environ.get("CUTLIST_CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_CORS_ORIGINS or ["*"],
+    allow_credentials=bool(_CORS_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Baseline browser protections on every response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # The microphone is used by "Say it" on this site only.
+    response.headers.setdefault("Permissions-Policy", "microphone=(self), camera=(), geolocation=()")
+    if request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
 
 # SaaS control plane: /auth/*, /api/projects, /api/projects/{id}/*
 app.include_router(saas_router)

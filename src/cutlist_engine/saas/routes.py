@@ -19,16 +19,19 @@ from . import emailer
 from .models import ApiKey, Job, OffcutStock, Project, User
 from .queue import enqueue
 from .quote import normalise_quote, quote_totals
+from .ratelimit import limit
 from .security import (
     create_access_token,
+    create_reset_token,
     generate_api_key,
     get_current_user,
     get_db,
     hash_password,
+    user_for_reset_token,
     verify_password,
 )
 from .share_page import render_share_page
-from .storage import ALLOWED_SUFFIXES, safe_resolve, save_model
+from .storage import ALLOWED_SUFFIXES, project_dir, safe_resolve, save_model
 
 router = APIRouter()
 
@@ -61,7 +64,10 @@ def _issue_verification(user: User, db: Session) -> None:
 
 
 @router.post("/auth/signup", status_code=201)
-def signup(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+def signup(
+    email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db),
+    _limit: None = Depends(limit("signup", 10, 3600)),
+):
     email = email.strip().lower()
     if not _EMAIL_RE.match(email):
         raise HTTPException(422, "Enter a valid email address")
@@ -81,11 +87,60 @@ def signup(email: str = Form(...), password: str = Form(...), db: Session = Depe
 
 
 @router.post("/auth/login")
-def login(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+def login(
+    email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db),
+    _limit: None = Depends(limit("login", 10, 300)),
+):
     user = db.query(User).filter(User.email == email.strip().lower()).first()
     if user is None or not verify_password(password, user.password_hash):
         raise HTTPException(401, "Wrong email or password")
     return {"token": create_access_token(user.id), "user": _user_payload(user)}
+
+
+@router.post("/auth/forgot")
+def forgot_password(
+    email: str = Form(...), db: Session = Depends(get_db),
+    _limit: None = Depends(limit("forgot", 5, 3600)),
+):
+    """Email a reset link. The answer is the same whether or not the account exists."""
+    user = db.query(User).filter(User.email == email.strip().lower()).first()
+    if user is not None:
+        try:
+            emailer.send_password_reset_email(user.email, create_reset_token(user))
+        except Exception:  # never reveal, or fail on, email problems
+            pass
+    return {"sent": True}
+
+
+@router.post("/auth/reset")
+def reset_password(
+    token: str = Form(...), password: str = Form(...), db: Session = Depends(get_db),
+    _limit: None = Depends(limit("reset", 10, 3600)),
+):
+    if len(password) < 8:
+        raise HTTPException(422, "Password must be at least 8 characters")
+    user = user_for_reset_token(token, db)
+    if user is None:
+        raise HTTPException(400, "This reset link has expired or was already used. Ask for a new one.")
+    user.password_hash = hash_password(password)
+    db.commit()
+    return {"token": create_access_token(user.id), "user": _user_payload(user)}
+
+
+@router.delete("/auth/me")
+def delete_account(
+    password: str = Form(...), user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    _limit: None = Depends(limit("delete-account", 5, 3600)),
+):
+    """Permanently delete the account, every project and file, and saved offcuts."""
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(403, "That password is not right")
+    for project in list(user.projects):
+        _delete_project_files(project.id)
+    db.query(OffcutStock).filter(OffcutStock.user_id == user.id).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    return {"deleted": True}
 
 
 @router.get("/auth/me")
@@ -632,6 +687,33 @@ def update_project_settings(
     db.commit()
     job_id = enqueue(project.id).id if rerun else None
     return {"project": _project_payload(project, db, include_result=True), "rerun": rerun, "job_id": job_id}
+
+
+def _delete_project_files(project_id: int) -> None:
+    import shutil
+
+    shutil.rmtree(project_dir(project_id), ignore_errors=True)
+
+
+@router.delete("/api/projects/{project_id}")
+def delete_project(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Delete a project, its files and its share link. Offcuts it had reserved go back on the shelf."""
+    project = _owned_project(project_id, user, db)
+    if any(job.status in {"queued", "processing"} for job in project.jobs):
+        raise HTTPException(409, "This plan is still being made. Wait for it to finish, then delete it.")
+    db.query(OffcutStock).filter(
+        OffcutStock.project_id == project.id, OffcutStock.status == "reserved"
+    ).update({OffcutStock.status: "available", OffcutStock.project_id: None}, synchronize_session=False)
+    db.query(OffcutStock).filter(OffcutStock.project_id == project.id).update(
+        {OffcutStock.project_id: None}, synchronize_session=False
+    )
+    db.query(OffcutStock).filter(OffcutStock.source_project_id == project.id).update(
+        {OffcutStock.source_project_id: None}, synchronize_session=False
+    )
+    db.delete(project)
+    db.commit()
+    _delete_project_files(project_id)
+    return {"deleted": True}
 
 
 @router.post("/api/projects/{project_id}/jobs", status_code=201)

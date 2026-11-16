@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getLanguage, t } from '../i18n';
+import { getLanguage, t, tf } from '../i18n';
 import {
   ChevronLeft, Check, Clock, Copy, FileText, FolderOpen, KeyRound,
   LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Sparkles, Trash2, TriangleAlert, Ruler,
@@ -11,7 +11,7 @@ import LinearView from './LinearView';
 import ChatDrawer from './ChatDrawer';
 import { EdgeBandingCard, QuoteCard } from './PlanTools';
 import {
-  aiAvailable, artifactDownloadUrl, askAssistant, createApiKey, createProject, createProjectFromDescription, deleteOffcut, updateProjectSettings, friendlyError, getProject,
+  aiAvailable, artifactDownloadUrl, askAssistant, createApiKey, createProject, createProjectFromDescription, deleteAccount, deleteOffcut, deleteProject, updateProjectSettings, friendlyError, getProject,
   listApiKeys, listOffcuts, listProjects, rerunProject, resendVerification, revokeApiKey,
   saveProjectOffcuts, shareProject,
 } from '../api';
@@ -100,7 +100,11 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     }
   }, []);
 
-  useEffect(() => { void refreshList(); }, [refreshList]);
+  // Deferred a tick: the list loader sets state as soon as it starts.
+  useEffect(() => {
+    const id = window.setTimeout(() => void refreshList(), 0);
+    return () => window.clearTimeout(id);
+  }, [refreshList]);
 
   const openDashboard = useCallback((projectId: number, job: SaaSJob | null) => {
     void (async () => {
@@ -237,6 +241,31 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     }
   };
 
+  const handleDelete = (project: SaaSProject) => {
+    if (!window.confirm(tf('Delete "{name}"? Its files and share link are removed for good. This cannot be undone.', { name: project.name }))) return;
+    setError(null);
+    void (async () => {
+      try {
+        await deleteProject(project.id);
+        await refreshList();
+      } catch (err) {
+        setError(friendlyError(err, 'Could not delete the project. Try again.'));
+      }
+    })();
+  };
+
+  const handleDeleteAccount = (password: string) => {
+    setError(null);
+    void (async () => {
+      try {
+        await deleteAccount(password);
+        onSignOut();
+      } catch (err) {
+        setError(friendlyError(err, 'Could not delete the account. Check your password and try again.'));
+      }
+    })();
+  };
+
   const handleRerun = (projectId: number) => {
     setBusy(t('Queuing a fresh run…'));
     setError(null);
@@ -305,9 +334,6 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     }
   }, []);
 
-  useEffect(() => {
-    if (keysOpen) void refreshKeys();
-  }, [keysOpen, refreshKeys]);
 
   const handleCreateKey = async () => {
     setBusy(t('Creating API key…'));
@@ -547,6 +573,11 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                     <RotateCcw size={16} />
                   </button>
                 )}
+                {(p.job?.status === 'done' || p.job?.status === 'failed') && (
+                  <button type="button" className="btn" onClick={() => handleDelete(p)} aria-label={t('Delete project')} title={t('Delete project')}>
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
               {p.job?.status === 'failed' && p.job.error && (
                 <p className="muted small" style={{ color: 'var(--warn)', marginTop: 8 }}>{p.job.error}</p>
@@ -596,7 +627,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           <h2 style={{ margin: 0 }}>{t('API keys')}</h2>
           <span className="muted small">{t('Let your CNC software pull plans on its own')}</span>
           <div className="spacer" />
-          <button type="button" className="btn" onClick={() => setKeysOpen(!keysOpen)}>
+          <button type="button" className="btn" onClick={() => { const next = !keysOpen; setKeysOpen(next); if (next) void refreshKeys(); }}>
             {keysOpen ? 'Hide' : 'Manage'}
           </button>
         </div>
@@ -648,6 +679,37 @@ export default function ProjectsView({ user, onSignOut }: Props) {
             </button>
           </div>
         )}
+      </section>
+
+      {/* ---- Account: the user's data is theirs to remove ---- */}
+      <section className="card keys-panel">
+        <details className="more">
+          <summary>{t('Account')}</summary>
+          <div className="stack" style={{ marginTop: 8 }}>
+            <p className="small muted">
+              {t('Deleting your account removes every project, file, share link, API key and saved offcut. It cannot be undone.')}
+            </p>
+            <form
+              className="row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const password = String(new FormData(e.currentTarget).get('password') || '');
+                if (password && window.confirm(t('Delete your account and all your data for good?'))) handleDeleteAccount(password);
+              }}
+            >
+              <input
+                name="password" type="password" className="input" required autoComplete="current-password"
+                placeholder={t('Your password')} aria-label={t('Your password')} style={{ maxWidth: 260 }}
+              />
+              <button type="submit" className="btn btn-danger"><Trash2 size={16} /> {t('Delete my account')}</button>
+            </form>
+          </div>
+        </details>
+        <p className="small muted" style={{ marginTop: 10 }}>
+          <a href="/terms.html" target="_blank" rel="noopener">{t('Terms')}</a>
+          {' · '}
+          <a href="/privacy.html" target="_blank" rel="noopener">{t('Privacy Policy')}</a>
+        </p>
       </section>
     </main>
   );

@@ -8,3 +8,4 @@ import os
 
 os.environ.setdefault("CUTLIST_NO_DOTENV", "1")
 os.environ.pop("CUTLIST_API_TOKEN", None)
+os.environ.setdefault("CUTLIST_RATE_LIMIT", "off")  # tests sign up many times from one address

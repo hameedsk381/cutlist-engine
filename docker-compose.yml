@@ -30,6 +30,14 @@ services:
       CUTLIST_API_TOKEN: ${CUTLIST_API_TOKEN:-}
       # AI features (optional)
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      CUTLIST_AI_MODEL: ${CUTLIST_AI_MODEL:-}
+      CUTLIST_AI_VISION_MODEL: ${CUTLIST_AI_VISION_MODEL:-}
+      CUTLIST_AI_SPEECH_MODEL: ${CUTLIST_AI_SPEECH_MODEL:-}
+      CUTLIST_AI_DAILY_LIMIT: ${CUTLIST_AI_DAILY_LIMIT:-200}
+      # Public safety: browser origins allowed to call the API (blank = any), sign-in rate limits
+      CUTLIST_CORS_ORIGINS: ${CUTLIST_CORS_ORIGINS:-}
+      CUTLIST_TRUST_PROXY: ${CUTLIST_TRUST_PROXY:-}
+      CUTLIST_RATE_LIMIT: ${CUTLIST_RATE_LIMIT:-on}
       # SaaS database (users, projects, jobs)
       CUTLIST_DATABASE_URL: postgresql+psycopg://cutlist:${POSTGRES_PASSWORD}@db:5432/cutlist
       CUTLIST_JWT_SECRET: ${CUTLIST_JWT_SECRET:?set CUTLIST_JWT_SECRET in .env}
@@ -76,6 +84,9 @@ services:
       CUTLIST_DATABASE_URL: postgresql+psycopg://cutlist:${POSTGRES_PASSWORD}@db:5432/cutlist
       CUTLIST_STORAGE_DIR: /data/storage
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      CUTLIST_AI_MODEL: ${CUTLIST_AI_MODEL:-}
+      CUTLIST_AI_VISION_MODEL: ${CUTLIST_AI_VISION_MODEL:-}
+      CUTLIST_AI_SPEECH_MODEL: ${CUTLIST_AI_SPEECH_MODEL:-}
       CUTLIST_MAX_TRIANGLES: ${CUTLIST_MAX_TRIANGLES:-500000}
       # Email (verification links etc.)
       CUTLIST_SMTP_HOST: ${CUTLIST_SMTP_HOST:-}

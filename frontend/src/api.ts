@@ -181,6 +181,25 @@ export async function saasLogin(email: string, password: string): Promise<SaaSUs
   return r.data.user as SaaSUser;
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  await api.post('/auth/forgot', _form({ email }));
+}
+
+export async function resetPassword(token: string, password: string): Promise<SaaSUser> {
+  const r = await api.post('/auth/reset', _form({ token, password }));
+  setSaasToken(r.data.token);
+  return r.data.user as SaaSUser;
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  await api.delete(`/api/projects/${id}`);
+}
+
+export async function deleteAccount(password: string): Promise<void> {
+  await api.delete('/auth/me', { data: _form({ password }) });
+  clearSaasToken();
+}
+
 export async function saasMe(): Promise<SaaSUser> {
   const r = await api.get('/auth/me');
   return r.data as SaaSUser;
