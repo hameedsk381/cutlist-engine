@@ -53,10 +53,22 @@ projects, and a DB-backed async job queue with a separate worker process.
 | `POST /api/projects/{id}/jobs` | re-run processing |
 | `POST /api/projects/{id}/share` · `DELETE …/share` | create / revoke a public read-only quote link |
 | `GET  /share/{token}` | public, printable cutting-plan page (no auth, no JS) |
+| `POST /api/projects/{id}/offcuts` | save a finished plan's reusable leftovers to your shelf |
+| `GET  /api/offcuts` · `DELETE /api/offcuts/{id}` | list / discard shelf pieces (reserved pieces cannot be deleted) |
 | `GET  /api/projects/{id}/download/{file}` | download any artifact (auth-scoped) |
 
 API keys authenticate like sessions: `Authorization: Bearer ckl_…` works on
 every project route, so shop software can pull plans without a browser.
+
+### Offcut carry-over
+
+Tick **"Use my offcut shelf"** when creating a project and the engine nests
+parts onto leftover pieces from earlier plans first (matched by thickness,
+biggest first). Offcut pieces are free — they cost nothing and shrink the
+"buy" list; the plan marks those sheets and the dashboard shows what was
+actually bought. Lifecycle: saving offcuts from a finished plan puts them on
+the shelf (`available`); creating a project with the shelf on reserves them;
+a successful job marks them `used`, a failed one puts them back.
 
 Run it:
 
@@ -71,8 +83,7 @@ docker compose up -d --build
 
 Key env vars: `CUTLIST_DATABASE_URL` (SQLite default / Postgres in compose),
 `CUTLIST_JWT_SECRET` (**required in production**), `CUTLIST_STORAGE_DIR`,
-`CUTLIST_MONTHLY_JOB_LIMIT` (free-plan quota; billing via Razorpay is the
-next milestone), `CUTLIST_SMTP_HOST`/`CUTLIST_SMTP_PORT`/`CUTLIST_SMTP_USER`/
+`CUTLIST_MONTHLY_JOB_LIMIT` (free-plan quota), `CUTLIST_SMTP_HOST`/`CUTLIST_SMTP_PORT`/`CUTLIST_SMTP_USER`/
 `CUTLIST_SMTP_PASSWORD`/`CUTLIST_SMTP_FROM` (verification email; without them
 the link is logged instead), and `CUTLIST_APP_URL` (public base URL used in
 email links). The worker requeues jobs left `processing` by a crashed run.
