@@ -44,6 +44,13 @@ services:
       CUTLIST_SESSION_DIR: /data/sessions
       # Keep at 1 (session state + locks live in-process)
       CUTLIST_WORKERS: ${CUTLIST_WORKERS:-1}
+      # Email verification (M3)
+      CUTLIST_SMTP_HOST: ${CUTLIST_SMTP_HOST:-}
+      CUTLIST_SMTP_PORT: ${CUTLIST_SMTP_PORT:-587}
+      CUTLIST_SMTP_USER: ${CUTLIST_SMTP_USER:-}
+      CUTLIST_SMTP_PASSWORD: ${CUTLIST_SMTP_PASSWORD:-}
+      CUTLIST_SMTP_FROM: ${CUTLIST_SMTP_FROM:-}
+      CUTLIST_APP_URL: ${CUTLIST_APP_URL:-}
     volumes:
       - cutlist-sessions:/data/sessions
       - cutlist-storage:/data/storage
@@ -70,8 +77,21 @@ services:
       CUTLIST_STORAGE_DIR: /data/storage
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       CUTLIST_MAX_TRIANGLES: ${CUTLIST_MAX_TRIANGLES:-500000}
+      # Email (verification links etc.)
+      CUTLIST_SMTP_HOST: ${CUTLIST_SMTP_HOST:-}
+      CUTLIST_SMTP_PORT: ${CUTLIST_SMTP_PORT:-587}
+      CUTLIST_SMTP_USER: ${CUTLIST_SMTP_USER:-}
+      CUTLIST_SMTP_PASSWORD: ${CUTLIST_SMTP_PASSWORD:-}
+      CUTLIST_SMTP_FROM: ${CUTLIST_SMTP_FROM:-}
+      CUTLIST_APP_URL: ${CUTLIST_APP_URL:-}
     volumes:
       - cutlist-storage:/data/storage
+    healthcheck:
+      # The worker is a DB poller with no HTTP server — check the process, not a port.
+      test: ["CMD-SHELL", "pgrep -f cutlist_engine.saas.worker || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     mem_limit: 2g
 
 volumes:
