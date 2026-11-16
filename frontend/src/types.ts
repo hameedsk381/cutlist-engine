@@ -52,6 +52,27 @@ export interface Sheet {
   parts: SheetPart[];
   offcuts: Offcut[];
   is_offcut_stock?: boolean;
+  /** Saw cuts in order. Missing on projects planned before cut sequences existed. */
+  cuts?: { ok: boolean; steps: CutStep[] };
+}
+
+export interface CutStep {
+  step: number;
+  /** 0 = cuts across the whole sheet, 1 = cuts on the strips they make, and so on. */
+  stage: number;
+  kind: 'split' | 'trim';
+  /** horizontal: the cut line runs left-right on the drawing; vertical: top-bottom. */
+  direction: 'horizontal' | 'vertical';
+  /** mm from the sheet's top edge (horizontal) or left edge (vertical). */
+  position: number;
+  /** The same distance measured from the edge of the piece being cut. */
+  from_edge: number;
+  piece: [number, number];
+  /** [x0, y0, x1, y1] of the cut line on the sheet. */
+  line: [number, number, number, number];
+  kerf: number;
+  /** Parts that are finished once this cut is made. */
+  frees: string[];
 }
 
 export interface MaterialSummary {

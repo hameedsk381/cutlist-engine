@@ -3,7 +3,7 @@ import type { MouseEvent } from 'react';
 import { Minus, Plus, Maximize2 } from 'lucide-react';
 import { t } from '../i18n';
 import { describeTape, partGroup, tidyName } from '../format';
-import type { Board, Sheet, SheetPart } from '../types';
+import type { Board, CutStep, Sheet, SheetPart } from '../types';
 
 interface Props {
   sheet: Sheet;
@@ -19,6 +19,9 @@ interface Props {
   onSelectGroup?: (ids: string[]) => void;
   /** False for the printed copy: no zoom, hover card or dimming. */
   interactive?: boolean;
+  /** Saw cuts to draw over the sheet, and the one to stress. */
+  cuts?: CutStep[];
+  activeCut?: number | null;
 }
 
 /** Soft, well-separated hues. Each kind of part gets one, in order of first appearance. */
@@ -69,7 +72,7 @@ function fitLabel(part: SheetPart, name: string, minSize: number, maxSize: numbe
 }
 
 export default function SheetLayout({
-  sheet, activeIds, onSelect, names, boards, numbers, onSelectGroup, interactive = true,
+  sheet, activeIds, onSelect, names, boards, numbers, onSelectGroup, interactive = true, cuts, activeCut = null,
 }: Props) {
   const uid = useId().replace(/:/g, '');
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -275,6 +278,34 @@ export default function SheetLayout({
               );
             })}
           </g>
+
+          {/* Saw cuts: a dashed line down the middle of the blade's path, numbered at its far end
+              (the near end is where the part numbers sit) */}
+          {cuts && cuts.length > 0 && (
+            <g pointerEvents="none">
+              {cuts.map(c => {
+                const on = activeCut === c.step;
+                const dim = activeCut !== null && !on;
+                const half = c.kerf / 2;
+                const [x0, y0, x1, y1] = c.line;
+                const horizontal = c.direction === 'horizontal';
+                const ax = horizontal ? x0 : x0 + half;
+                const ay = horizontal ? y0 + half : y0;
+                const bx = horizontal ? x1 : x1 + half;
+                const by = horizontal ? y1 + half : y1;
+                const r = sheet.width / 95;
+                return (
+                  <g key={c.step} opacity={dim ? 0.25 : 1}>
+                    <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#b3261e" strokeWidth={on ? stroke * 2.4 : stroke * 1.1}
+                      strokeDasharray={`${stroke * 7} ${stroke * 4}`} strokeLinecap="round" />
+                    <circle cx={bx - (horizontal ? r * 1.3 : 0)} cy={by - (horizontal ? 0 : r * 1.3)} r={on ? r * 1.25 : r} fill="#b3261e" />
+                    <text x={bx - (horizontal ? r * 1.3 : 0)} y={by - (horizontal ? 0 : r * 1.3)} fontSize={r * (c.step > 9 ? 1.05 : 1.3)}
+                      textAnchor="middle" dominantBaseline="central" fontWeight="800" fill="#fff">{c.step}</text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
         </svg>
 
         {interactive && hover && hovered && (

@@ -410,6 +410,19 @@ details.more > summary svg { transition: transform 150ms ease; }
 .sheet-legend button:not(:disabled):hover { background: var(--surface-2); border-color: var(--border-strong); }
 .sheet-legend button:disabled { cursor: default; }
 .legend-num { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 11px; background: var(--text-2); color: #fff; font-size: 12px; font-weight: 800; padding: 0 5px; }
+.cut-steps { display: grid; gap: 10px; }
+.cut-steps .check { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; cursor: pointer; }
+.cut-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.cut-stage { padding-top: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.cut-step button {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 44px; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 15px;
+}
+.cut-step button:not(:disabled):hover { background: var(--surface-2); border-color: var(--border-strong); }
+.cut-step button:disabled { cursor: default; }
+.cut-step.is-active button { border-color: #b3261e; background: color-mix(in srgb, #b3261e 8%, var(--surface)); }
+.cut-no { flex: none; display: inline-grid; place-items: center; min-width: 26px; height: 26px; border-radius: 13px; background: #b3261e; color: #fff; font-size: 13px; font-weight: 800; }
+@media print { .cut-step button { min-height: 0; padding: 2px 6px; border: 0; break-inside: avoid; } .cut-steps .check { display: none; } }
 .sheet-meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--text-2); font-size: 14px; margin-top: 10px; }
 .legend-swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: -2px; border: 1px solid var(--border-strong); }
 

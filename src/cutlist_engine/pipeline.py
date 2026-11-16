@@ -72,6 +72,8 @@ class ProcessResult:
     rejected_boards: list[Board] = field(default_factory=list)
     oversize_boards: list[Board] = field(default_factory=list)
     """Parts longer than any sheet. Left out of the plan and reported, not nested."""
+    kerf: float = 3.0
+    """Saw blade width the sheets were nested with; the cut sequence needs it."""
 
 
 # -----------------------------------------------------------------------------
@@ -218,6 +220,7 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
         per_material_summaries=tuple(per_material),
         rejected_boards=rejected,
         oversize_boards=oversize,
+        kerf=config.kerf,
     )
 
 

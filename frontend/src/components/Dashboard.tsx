@@ -6,6 +6,7 @@ import {
   ArrowLeft, ChevronRight, CircleCheck, Cpu, Download, FileText, Lightbulb, Printer, Tag, TriangleAlert,
 } from 'lucide-react';
 import SheetLayout from './SheetLayout';
+import CutSteps from './CutSteps';
 import { tidyName } from '../format';
 import { saveArtifact } from '../api';
 import type { FinalizeResult, ProcessResult, Sheet } from '../types';
@@ -36,7 +37,10 @@ function plain(issue: string): string | null {
 }
 
 export default function Dashboard({ result, finalized, designNotes = [], tools, onBackToParts, onForce, error }: Props) {
-  const [sheetIndex, setSheetIndex] = useState(0);
+  const [sheetIndex, setSheetIndexRaw] = useState(0);
+  const [showCuts, setShowCuts] = useState(false);
+  const [activeCut, setActiveCut] = useState<number | null>(null);
+  const setSheetIndex = (i: number) => { setSheetIndexRaw(i); setActiveCut(null); };
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
 
   const boards = useMemo(() => Object.fromEntries(result.boards.map(b => [b.id, b])), [result.boards]);
@@ -207,6 +211,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
                 <SheetLayout
                   sheet={sheet} activeIds={activeIds} onSelect={id => selectBoards([id])} names={names}
                   boards={boards} numbers={numbers} onSelectGroup={selectBoards}
+                  cuts={showCuts || activeCut !== null ? sheet.cuts?.steps : undefined} activeCut={activeCut}
                 />
                 <div className="sheet-meta">
                   <span><span className="legend-swatch" style={{ background: 'hsl(205 58% 90%)', borderColor: 'hsl(205 40% 30%)' }} />{t('Part to cut')}</span>
@@ -217,12 +222,26 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
               </section>
             )}
 
+            {sheet?.cuts && (
+              <section className="card screen-only" aria-label={t('Cutting order')}>
+                <div className="card-title">
+                  <h2>{t('Cutting order')}</h2>
+                  <span className="tag tag-muted num">{tf('{n} cuts', { n: sheet.cuts.steps.length })}</span>
+                </div>
+                <CutSteps
+                  sheet={sheet} numbers={numbers} active={activeCut} onActive={setActiveCut}
+                  showLines={showCuts} onShowLines={setShowCuts}
+                />
+              </section>
+            )}
+
             {/* On paper every sheet is printed, one after another. */}
             <div className="only-print print-all-sheets">
               {sheets.map(s => (
                 <div key={s.sheet_id} className="sheet-print">
                   <h2 style={{ marginBottom: 8 }}>{sheetName(s)} — {Math.round(s.width)} × {Math.round(s.height)} mm</h2>
-                  <SheetLayout sheet={s} activeIds={new Set()} onSelect={() => {}} names={names} boards={boards} numbers={numbers} interactive={false} />
+                  <SheetLayout sheet={s} activeIds={new Set()} onSelect={() => {}} names={names} boards={boards} numbers={numbers} interactive={false} cuts={s.cuts?.steps} />
+                  <CutSteps sheet={s} numbers={numbers} interactive={false} />
                 </div>
               ))}
             </div>

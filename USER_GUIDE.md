@@ -78,6 +78,18 @@ Use the main page for quick extraction and layout review.
 
 The quick page is best for estimates and fast visual checks. Use the operator review workflow before cutting real stock.
 
+### Cutting order (panel saw)
+
+Under the sheet drawing, **Cutting order** lists the straight edge-to-edge saw cuts that turn each sheet into its parts, in the order to make them:
+
+- Cuts are grouped into stages. Stage 1 is across the whole sheet; later stages cut the strips and pieces those make.
+- Each step names the piece in your hands (for example `2135 × 516`) and how far from its top or left edge to cut. Distances are to the near side of the blade; the blade (the kerf) cuts into the gap beyond.
+- "Trim the waste" steps remove leftover edge material. One trim serves every part in the piece.
+- A step ends with the parts it finishes (`part #4 done`), using the numbers in the parts list.
+- Tick **Show the cut lines on the sheet** to draw the cuts, numbered, over the drawing. Click a step to highlight its line. The printed plan lists the steps under each sheet.
+
+Projects planned before this feature have no cutting order. Press the re-run button on the project to get one. A sheet that cannot be cut with straight cuts says so instead of showing steps; the nesting does not produce such sheets today.
+
 ## 5. Operator Review Workflow
 
 Use `/review` for production jobs.

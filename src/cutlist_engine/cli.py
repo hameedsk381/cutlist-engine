@@ -136,6 +136,7 @@ def main() -> None:
         result.waste_optimization_report,
         result.model_fix_report,
         result.sheet_size_options,
+        kerf=result.kerf,
     )
 
     fix = result.model_fix_report

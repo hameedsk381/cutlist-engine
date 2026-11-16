@@ -55,6 +55,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .cutsequence import cut_sequence
 from .dxf_export import write_sheets_dxf_zip
 from .gcode_export import GCodeConfig, write_sheets_gcode
 from .models import ReviewDecision
@@ -382,7 +383,7 @@ async def api_finalize(session_id: str, payload: dict[str, Any]):
             result.boards, result.cutlist, result.sheets,
             result.extraction_report, result.material_summary,
             result.waste_optimization_report, result.model_fix_report,
-            result.sheet_size_options,
+            result.sheet_size_options, kerf=result.kerf,
         )
         write_sheet_layout_html(
             out_dir / "sheet_layout.html",
@@ -709,7 +710,7 @@ def _serialize_result(result) -> dict[str, Any]:
     return {
         "boards": boards,
         "cutlist": [asdict(c) for c in result.cutlist],
-        "sheets": [_sheet_payload(s, boards_map) for s in result.sheets],
+        "sheets": [_sheet_payload(s, boards_map, getattr(result, "kerf", 3.0)) for s in result.sheets],
         "extraction_report": asdict(result.extraction_report),
         "material_summary": asdict(result.material_summary),
         "waste_optimization_report": asdict(result.waste_optimization_report) if result.waste_optimization_report else None,
@@ -743,7 +744,7 @@ def _board_payload(board) -> dict[str, Any]:
     }
 
 
-def _sheet_payload(sheet, boards_map: dict[str, Any] | None = None) -> dict[str, Any]:
+def _sheet_payload(sheet, boards_map: dict[str, Any] | None = None, kerf: float = 3.0) -> dict[str, Any]:
     parts_payload = []
     for p in sheet.parts:
         pp = asdict(p)
@@ -768,6 +769,7 @@ def _sheet_payload(sheet, boards_map: dict[str, Any] | None = None) -> dict[str,
         "parts": parts_payload,
         "offcuts": [asdict(o) for o in sheet.offcuts],
         "is_offcut_stock": sheet.is_offcut_stock,
+        "cuts": cut_sequence(sheet, kerf),
     }
 
 

@@ -56,7 +56,7 @@ def run_job(project: Project) -> dict:
         result.boards, result.cutlist, result.sheets,
         result.extraction_report, result.material_summary,
         result.waste_optimization_report, result.model_fix_report,
-        result.sheet_size_options,
+        result.sheet_size_options, kerf=result.kerf,
     )
     write_sheet_layout_html(
         out_dir / "sheet_layout.html",

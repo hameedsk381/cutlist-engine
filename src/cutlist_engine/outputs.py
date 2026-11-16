@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .cutsequence import cut_sequence
 from .models import (
     Board,
     CutlistItem,
@@ -29,7 +30,9 @@ def write_json_report(
     waste_optimization_report: WasteOptimizationReport | None = None,
     model_fix_report: ModelFixReport | None = None,
     sheet_size_options: tuple[SheetSizeOption, ...] = (),
+    kerf: float | None = None,
 ) -> None:
+    """`kerf` (the saw blade width) adds each sheet's cut sequence to the report."""
     payload: dict[str, Any] = {
         "extraction_report": asdict(extraction_report) if extraction_report else None,
         "material_summary": asdict(material_summary) if material_summary else None,
@@ -42,7 +45,9 @@ def write_json_report(
         "boards": [_board_dict(board) for board in boards],
         "cutlist": [asdict(item) for item in cutlist],
         "sheets": [
-            asdict(sheet) | {"waste_percent": sheet.waste_percent, "utilization_percent": sheet.utilization_percent}
+            asdict(sheet)
+            | {"waste_percent": sheet.waste_percent, "utilization_percent": sheet.utilization_percent}
+            | ({"cuts": cut_sequence(sheet, kerf)} if kerf is not None else {})
             for sheet in sheets
         ],
     }
