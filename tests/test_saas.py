@@ -315,3 +315,28 @@ def test_share_token_is_reused_not_regenerated(client):
     first = client.post(f"/api/projects/{pid}/share", headers=_auth(token)).json()["share_url"]
     second = client.post(f"/api/projects/{pid}/share", headers=_auth(token)).json()["share_url"]
     assert first == second
+
+
+def test_legacy_shared_token_does_not_block_saas_routes(client, monkeypatch):
+    """In production CUTLIST_API_TOKEN is set; SaaS JWTs must still work."""
+    import cutlist_engine.server as server
+
+    monkeypatch.setattr(server, "API_TOKEN", "shared-workshop-token")
+
+    data = _signup(client, "prod@example.com")
+    token = data["token"]
+
+    # SaaS routes accept the user's JWT even with the legacy token configured
+    assert client.get("/api/projects", headers=_auth(token)).status_code == 200
+    created = _create_project(client, token)
+
+    # ...and an API key works too
+    key = client.post("/auth/api-keys", headers=_auth(token)).json()["key"]
+    assert client.get("/api/projects", headers=_auth(key)).status_code == 200
+
+    # the share page stays public
+    share = client.post(f"/api/projects/{created['project']['id']}/share", headers=_auth(token)).json()["share_url"]
+    assert client.get(share).status_code == 200
+
+    # legacy single-operator routes still require the shared token
+    assert client.post("/api/extract").status_code == 401

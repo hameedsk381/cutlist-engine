@@ -118,7 +118,12 @@ _SESSION_LOCKS: dict[str, threading.Lock] = {}
 
 @app.middleware("http")
 async def _api_token_middleware(request: Request, call_next):
-    if API_TOKEN and request.url.path.startswith("/api/"):
+    path = request.url.path
+    # The shared workshop token guards the legacy single-operator routes only.
+    # SaaS routes (/api/projects*) authenticate with per-user JWTs or API keys,
+    # so they must not be blocked here.
+    is_saas_route = path == "/api/projects" or path.startswith("/api/projects/")
+    if API_TOKEN and path.startswith("/api/") and not is_saas_route:
         expected = f"Bearer {API_TOKEN}"
         if request.headers.get("authorization") != expected:
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
