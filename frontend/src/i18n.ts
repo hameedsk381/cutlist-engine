@@ -292,6 +292,17 @@ const HI: Record<string, string> = {
   'width': 'चौड़ाई',
   'depth': 'गहराई',
 
+  // ---- Sheet view ----
+  'Zoom': 'ज़ूम',
+  'Zoom in': 'बड़ा करें',
+  'Zoom out': 'छोटा करें',
+  'Fit to screen': 'स्क्रीन में पूरा दिखाएँ',
+  'Spare': 'बचा हुआ',
+  'Tape': 'टेप',
+  'Turned 90° on the sheet': 'शीट पर 90° घुमाया गया',
+  'Kinds of part on this sheet': 'इस शीट पर पार्ट के प्रकार',
+  'Show these on the sheet': 'शीट पर इन्हें दिखाएँ',
+
   // ---- Account and landing ----
   'Email': 'ईमेल',
   'Password': 'पासवर्ड',

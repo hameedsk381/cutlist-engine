@@ -44,6 +44,10 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
     () => Object.fromEntries(result.boards.map(b => [b.id, tidyName(b.label || b.id)])),
     [result.boards],
   );
+  const numbers = useMemo(
+    () => Object.fromEntries(result.cutlist.flatMap((item, i) => (item.board_ids || []).map(id => [id, i + 1]))),
+    [result.cutlist],
+  );
   const summary = result.material_summary;
   const sheets = result.sheets;
   const money = (v: number) =>
@@ -200,9 +204,12 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
                   <h2>{sheetName(sheet)}</h2>
                   <span className="tag tag-muted num">{Math.round(sheet.width)} × {Math.round(sheet.height)} mm</span>
                 </div>
-                <SheetLayout sheet={sheet} activeIds={activeIds} onSelect={id => selectBoards([id])} names={names} />
+                <SheetLayout
+                  sheet={sheet} activeIds={activeIds} onSelect={id => selectBoards([id])} names={names}
+                  boards={boards} numbers={numbers} onSelectGroup={selectBoards}
+                />
                 <div className="sheet-meta">
-                  <span><span className="legend-swatch" style={{ background: 'var(--part)' }} />{t('Part to cut')}</span>
+                  <span><span className="legend-swatch" style={{ background: 'hsl(205 58% 90%)', borderColor: 'hsl(205 40% 30%)' }} />{t('Part to cut')}</span>
                   <span><span className="legend-swatch" style={{ background: 'var(--ok-soft)', borderColor: 'var(--ok)' }} />{t('Spare piece worth keeping')}</span>
                   <span><span className="legend-swatch" style={{ background: 'var(--wood)' }} />{t('Waste')}</span>
                   <span className="num">{tf('{parts} parts · {percent}% used', { parts: sheet.parts.length, percent: Math.round(sheet.utilization_percent) })}</span>
@@ -215,7 +222,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
               {sheets.map(s => (
                 <div key={s.sheet_id} className="sheet-print">
                   <h2 style={{ marginBottom: 8 }}>{sheetName(s)} — {Math.round(s.width)} × {Math.round(s.height)} mm</h2>
-                  <SheetLayout sheet={s} activeIds={new Set()} onSelect={() => {}} names={names} />
+                  <SheetLayout sheet={s} activeIds={new Set()} onSelect={() => {}} names={names} boards={boards} numbers={numbers} interactive={false} />
                 </div>
               ))}
             </div>
@@ -225,10 +232,10 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
               <div className="table-wrap">
                 <table className="cut">
                   <thead>
-                    <tr><th>{t('Qty')}</th><th>{t('Part')}</th><th>{t('Length')}</th><th>{t('Width')}</th><th>{t('Thick')}</th></tr>
+                    <tr><th>#</th><th>{t('Qty')}</th><th>{t('Part')}</th><th>{t('Length')}</th><th>{t('Width')}</th><th>{t('Thick')}</th></tr>
                   </thead>
                   <tbody>
-                    {result.cutlist.map(item => {
+                    {result.cutlist.map((item, index) => {
                       const ids = item.board_ids || [];
                       const active = ids.some(id => activeIds.has(id));
                       const label = [...new Set((item.labels || []).map(tidyName))].join(', ') || item.id;
@@ -238,6 +245,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
                           onClick={() => selectBoards(ids)}
                           onKeyDown={e => { if (e.key === 'Enter') selectBoards(ids); }}
                         >
+                          <td><span className="legend-num">{index + 1}</span></td>
                           <td className="qty num">{item.quantity} ×</td>
                           <td><strong>{label}</strong></td>
                           <td className="num">{Math.round(item.length)}</td>
