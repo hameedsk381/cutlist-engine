@@ -186,3 +186,67 @@ def test_model_exported_in_metres_is_scaled_and_flagged(tmp_path):
     size = lambda r: sorted((round(b.length), round(b.width), b.thickness) for b in r.boards)  # noqa: E731
     assert size(result) == size(reference) and len(result.boards) > 0
     assert any("read as metres" in issue for issue in result.model_fix_report.issues)
+
+
+def _dae_from_obj(obj_text: str, unit_attr: str, scale: float) -> str:
+    """A minimal COLLADA file with a box per OBJ... built from the model's vertices/faces."""
+    verts, faces = [], []
+    for line in obj_text.splitlines():
+        if line.startswith("v "):
+            verts.append([float(x) * scale for x in line.split()[1:4]])
+        elif line.startswith("f "):
+            idx = [int(p.split("/")[0]) - 1 for p in line.split()[1:]]
+            for i in range(1, len(idx) - 1):
+                faces.append((idx[0], idx[i], idx[i + 1]))
+    flat = " ".join(f"{c:.6f}" for v in verts for c in v)
+    tri = " ".join(str(i) for f in faces for i in f)
+    return (
+        '<?xml version="1.0"?><COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">'
+        f"<asset>{unit_attr}</asset><library_geometries><geometry id=\"g\"><mesh>"
+        f'<source id="p"><float_array id="pa" count="{len(verts) * 3}">{flat}</float_array>'
+        '<technique_common><accessor source="#pa" count="%d" stride="3"/></technique_common></source>'
+        '<vertices id="v"><input semantic="POSITION" source="#p"/></vertices>'
+        f'<triangles count="{len(faces)}"><input semantic="VERTEX" source="#v" offset="0"/><p>{tri}</p></triangles>'
+        '</mesh></geometry></library_geometries><library_visual_scenes><visual_scene id="s">'
+        '<node id="n" name="cab"><instance_geometry url="#g"/></node></visual_scene></library_visual_scenes>'
+        "</COLLADA>"
+    ) % len(verts)
+
+
+def test_dae_declared_units_are_converted(tmp_path):
+    """A SketchUp DAE in inches was read as mm: every part came out about 25 times too small."""
+    from cutlist_engine.furniture import describe_to_model
+    from cutlist_engine.parsers import load_model
+    from cutlist_engine.pipeline import ProcessConfig, process_triangles
+
+    obj = describe_to_model("Kitchen base unit 720 high, 600 wide, 560 deep, 1 shelf, 1 shutter")["obj"]
+    ref = tmp_path / "ref.obj"
+    ref.write_text(obj)
+    reference = process_triangles(load_model(ref), ProcessConfig())
+    size = lambda r: sorted((round(b.length), round(b.width), b.thickness) for b in r.boards)  # noqa: E731
+
+    cases = {
+        "inch": ('<unit name="inch" meter="0.0254"/>', 1 / 25.4),
+        "cm": ('<unit name="centimeter" meter="0.01"/>', 0.1),
+        "metre": ('<unit name="meter" meter="1"/>', 0.001),
+        "mm": ('<unit name="millimeter" meter="0.001"/>', 1.0),
+    }
+    for name, (attr, scale) in cases.items():
+        path = tmp_path / f"{name}.dae"
+        path.write_text(_dae_from_obj(obj, attr, scale))
+        triangles = load_model(path)
+        result = process_triangles(triangles, ProcessConfig())
+        assert size(result) == size(reference), name
+        assert bool(triangles.declared_unit) == (name != "mm"), name
+        if name == "inch":
+            assert any("declares its unit as 'inch'" in i for i in result.model_fix_report.issues)
+
+    # A file that declares metres but is really in mm is not blown up 1000x.
+    liar = tmp_path / "liar.dae"
+    liar.write_text(_dae_from_obj(obj, '<unit name="meter" meter="1"/>', 1.0))
+    assert size(process_triangles(load_model(liar), ProcessConfig())) == size(reference)
+
+    # No unit declared: the old size guess still applies.
+    plain = tmp_path / "plain.dae"
+    plain.write_text(_dae_from_obj(obj, "", 1.0))
+    assert size(process_triangles(load_model(plain), ProcessConfig())) == size(reference)

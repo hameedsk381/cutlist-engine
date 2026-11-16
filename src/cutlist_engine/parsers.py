@@ -33,6 +33,13 @@ class ModelTriangles(list):
     """Triangles read from a file, with a note when the units were corrected."""
 
     scaled_from_metres = False
+    declared_unit: str | None = None  # unit name a DAE file declared and we converted from
+    unit_mm: float | None = None  # millimetres per file unit, as declared (DAE only)
+
+
+MAX_DECLARED_EXTENT_MM = 100_000.0
+"""If converting by a declared unit makes the model over 100 m across, the file
+declared a unit that its numbers do not use; the declaration is ignored."""
 
 
 def load_model(path: Path) -> list[Triangle]:
@@ -60,6 +67,19 @@ def _fix_units(triangles: list[Triangle]) -> list[Triangle]:
     coords = [(v.x, v.y, v.z) for t in triangles for v in t.vertices]
     extent = max(max(c[i] for c in coords) - min(c[i] for c in coords) for i in range(3))
     result = ModelTriangles(triangles)
+    unit_mm = getattr(triangles, "unit_mm", None)
+    if unit_mm:
+        # The file says what its unit is: trust that over the size guess.
+        if abs(unit_mm - 1.0) < 1e-9 or extent * unit_mm > MAX_DECLARED_EXTENT_MM:
+            return result
+        k = unit_mm
+        result = ModelTriangles(
+            replace(t, a=Vec3(t.a.x * k, t.a.y * k, t.a.z * k), b=Vec3(t.b.x * k, t.b.y * k, t.b.z * k),
+                    c=Vec3(t.c.x * k, t.c.y * k, t.c.z * k))
+            for t in triangles
+        )
+        result.declared_unit = getattr(triangles, "declared_unit", None) or f"{unit_mm:g} mm"
+        return result
     if 0 < extent < METRES_BELOW:
         scale = lambda v: Vec3(v.x * 1000.0, v.y * 1000.0, v.z * 1000.0)  # noqa: E731
         result = ModelTriangles(
@@ -196,13 +216,27 @@ def load_dae(path: Path) -> list[Triangle]:
                     )
                 )
 
-    if triangles:
-        return triangles
+    if not triangles:
+        for geometry_id, geometry_triangles in geometries.items():
+            for triangle in geometry_triangles:
+                triangles.append(Triangle(triangle.a, triangle.b, triangle.c, geometry_id))
+    result = ModelTriangles(triangles)
+    result.unit_mm, result.declared_unit = _dae_unit(root, ns)
+    return result
 
-    for geometry_id, geometry_triangles in geometries.items():
-        for triangle in geometry_triangles:
-            triangles.append(Triangle(triangle.a, triangle.b, triangle.c, geometry_id))
-    return triangles
+
+def _dae_unit(root: ET.Element, ns: str) -> tuple[float | None, str | None]:
+    """The unit a COLLADA file declares: (millimetres per unit, its name)."""
+    unit = root.find(f"{ns}asset/{ns}unit")
+    if unit is None:
+        return None, None
+    try:
+        metres = float(unit.attrib.get("meter", ""))
+    except ValueError:
+        return None, None
+    if not 0 < metres < 1000:
+        return None, None
+    return metres * 1000.0, unit.attrib.get("name") or None
 
 
 def _vec3(value: Any) -> Vec3:

@@ -369,10 +369,11 @@ set sheet size, board thickness and sheet price, then continue.
 - If a whole model is **under 20 units across**, CutList assumes you exported
   in **metres** and scales it by 1000, and says so in the plan's notes. This
   catches a Blender-style export. It does not catch **inches or centimetres**.
-- **DAE files:** CutList does **not** read the unit setting a DAE file
-  declares, and does not convert from inches. A DAE exported in inches will be
-  read as millimetres, and every part will come out about 25 times too small.
-  Until this is changed, use **OBJ in millimetres** or the extension.
+- **DAE files declare their unit** (SketchUp writes inches). CutList reads it
+  and converts to millimetres, and says so in the plan's notes
+  ("This file declares its unit as 'inch'…"). If a DAE has no unit, the
+  under-20-units metres guess above applies. If a declared unit would make the
+  model over 100 m across, the declaration is ignored as wrong.
 - After any upload, compare one known size (the cabinet height) with the plan.
   If it is wrong, the units are wrong.
 

@@ -201,6 +201,7 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
         oversize=oversize,
         material_registry=material_registry,
         scaled_from_metres=bool(getattr(triangles, "scaled_from_metres", False)),
+        declared_unit=getattr(triangles, "declared_unit", None),
     )
 
     waste_optimization_report = waste_reports[0] if len(waste_reports) == 1 else _merge_waste_reports(waste_reports)
@@ -608,9 +609,19 @@ def _build_model_fix_report(
     oversize: list[Board] | None = None,
     material_registry: dict[str, MaterialSpec] | None = None,
     scaled_from_metres: bool = False,
+    declared_unit: str | None = None,
 ) -> ModelFixReport:
     issues: list[str] = []
     recommendations: list[str] = []
+
+    if declared_unit:
+        issues.append(
+            f"This file declares its unit as '{declared_unit}', so it was converted to millimetres."
+        )
+        recommendations.append(
+            "Check one known size (the cabinet height) against the plan. "
+            "If it is wrong, export again with the unit set to millimetres."
+        )
 
     if scaled_from_metres:
         issues.append(
