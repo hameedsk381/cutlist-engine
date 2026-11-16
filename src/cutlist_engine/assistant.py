@@ -80,12 +80,13 @@ def plan_facts(summary: dict[str, Any], quote_totals: dict[str, Any] | None = No
         f"Reusable spare pieces {float(material.get('reusable_offcut_area') or 0):.2f} m2."
     )
 
-    lines.append("PARTS (row. quantity x name, cut length x width x thickness in mm, tape):")
+    lines.append("PARTS (row. id=part id: quantity x name, cut length x width x thickness in mm, tape):")
     for row, item in enumerate(cutlist[:MAX_ROWS_IN_FACTS], start=1):
         ids = item.get("board_ids") or []
         band = boards.get(ids[0], {}).get("edge_band") if ids else None
+        part_id = item.get("id") or f"row_{row}"
         lines.append(
-            f"{row}. {item.get('quantity', 1)} x {_row_name(item)}, "
+            f"{row}. id={part_id}: {item.get('quantity', 1)} x {_row_name(item)}, "
             f"{float(item.get('length') or 0):.0f} x {float(item.get('width') or 0):.0f} x "
             f"{float(item.get('thickness') or 0):g}, tape: {_describe_band(band)}"
         )
@@ -214,6 +215,37 @@ def _rows(raw: Any, count: int) -> list[int]:
     return rows
 
 
+def _target_rows(part_ids: Any, rows: Any, cutlist: list[dict[str, Any]]) -> list[int]:
+    """Row numbers (1-based) an action points at.
+
+    A part id such as "part_011" is matched against each cutlist item's own id,
+    never read as a row number: rows are sorted by size and do not line up with
+    ids. When ids are given they decide the target; an id that matches nothing
+    drops the action rather than falling back to a row number, which could be a
+    different part. Row numbers are used only when no id is given. A string in
+    `rows` that is a part id counts as an id.
+    """
+    by_id = {str(item.get("id")): index for index, item in enumerate(cutlist, start=1) if item.get("id")}
+
+    def lookup(values: Any) -> list[int]:
+        if isinstance(values, str):
+            values = [values]
+        found: list[int] = []
+        for value in values if isinstance(values, list) else []:
+            index = by_id.get(str(value).strip())
+            if index is None:
+                return []  # one unknown id makes the whole target untrustworthy
+            if index not in found:
+                found.append(index)
+        return found
+
+    if part_ids not in (None, "", []):
+        return lookup(part_ids)
+    if isinstance(rows, list) and rows and all(isinstance(v, str) and v.strip() in by_id for v in rows):
+        return lookup(rows)  # the model put part ids where row numbers go
+    return _rows(rows, len(cutlist))
+
+
 def resolve_actions(
     actions: list[dict[str, Any]],
     summary: dict[str, Any],
@@ -240,7 +272,7 @@ def resolve_actions(
 
         if kind == "edge_band":
             choice = action.get("edges")
-            rows = _rows(action.get("rows"), len(cutlist))
+            rows = _target_rows(action.get("part_ids"), action.get("rows"), cutlist)
             if choice not in _EDGE_CHOICES or not rows:
                 continue
             tape = _number(action.get("tape_mm"))
@@ -266,7 +298,7 @@ def resolve_actions(
                 override_titles.append(f"{tape:g} mm tape on {_EDGE_WORDS[choice]} of {parts} {unit}")
 
         elif kind == "rename":
-            rows = _rows(action.get("row"), len(cutlist))
+            rows = _target_rows(action.get("part_id"), action.get("row"), cutlist)
             name = " ".join(str(action.get("name") or "").split())[:80]
             if len(rows) != 1 or not name:
                 continue

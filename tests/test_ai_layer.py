@@ -192,8 +192,8 @@ SUMMARY = {
 
 def test_plan_facts_number_the_rows_and_state_computed_observations():
     facts = plan_facts(SUMMARY)
-    assert "1. 2 x Side, 1800 x 300 x 18, tape: none" in facts
-    assert "2. 1 x Shelf, 964 x 280 x 18, tape: 2 mm on the front edge" in facts
+    assert "1. id=c1: 2 x Side, 1800 x 300 x 18, tape: none" in facts
+    assert "2. id=c2: 1 x Shelf, 964 x 280 x 18, tape: 2 mm on the front edge" in facts
     assert "2 sheets (1 x 18 mm, 1 x 6 mm)" in facts
     assert "Sheet 2 is only 28% used" in facts
     assert "Shelf is 964 mm long" in facts          # over the 900 mm span rule
@@ -344,3 +344,79 @@ def test_sketch_route_returns_a_sentence_to_check(client, provider):  # noqa: F8
     provider('{"readable": false}')
     r = client.post("/api/tools/ai/sketch", files={"file": ("s.jpg", b"jpeg", "image/jpeg")}, headers=_auth(token))
     assert r.status_code == 422 and "could not read sizes" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Part ids are not row numbers
+# ---------------------------------------------------------------------------
+
+def _size_sorted_summary():
+    """Rows are sorted by size, so part_001 is the LAST row and part_011 is row 1."""
+    ids = ["part_011", "part_007", "part_003", "part_001"]
+    return {
+        "boards": [{"id": f"panel_{n}", "thickness": 18, "edge_band": [0, 0, 0, 0]} for n in (40, 12, 9, 5)],
+        "cutlist": [
+            {"id": pid, "quantity": 1, "labels": [f"Mesh {pid}"], "board_ids": [f"panel_{n}"],
+             "length": 2000 - 300 * i, "width": 500, "thickness": 18}
+            for i, (pid, n) in enumerate(zip(ids, (40, 12, 9, 5)))
+        ],
+        "sheets": [],
+        "material_summary": {"sheet_count": 1, "currency": "INR"},
+    }
+
+
+def test_facts_show_each_rows_part_id():
+    facts = plan_facts(_size_sorted_summary())
+    assert "1. id=part_011: 1 x" in facts and "4. id=part_001: 1 x" in facts
+    assert "id=row_1" not in facts
+    assert "id=part_NNN" in ai._ASSISTANT_SYSTEM and "Never treat a part id as a row number" in ai._ASSISTANT_SYSTEM
+
+
+def test_rename_by_part_id_targets_that_part_not_the_row_with_the_same_number():
+    summary = _size_sorted_summary()
+    (proposal,) = resolve_actions([{"type": "rename", "part_id": "part_011", "name": "Shelf Side Panel"}], summary)
+    assert proposal["overrides"] == {"panel_40": {"label": "Shelf Side Panel"}}
+    # part_001 is the 4th row; reading "part_011" as row 11 or "part_001" as row 1 would be wrong.
+    (proposal,) = resolve_actions([{"type": "rename", "part_id": "part_001", "name": "Back"}], summary)
+    assert proposal["overrides"] == {"panel_5": {"label": "Back"}}
+
+
+def test_part_id_wins_over_a_conflicting_row_number():
+    (proposal,) = resolve_actions([{"type": "rename", "part_id": "part_003", "row": 1, "name": "Mid"}], _size_sorted_summary())
+    assert proposal["overrides"] == {"panel_9": {"label": "Mid"}}
+
+
+def test_unknown_part_id_drops_the_action_instead_of_guessing_a_row():
+    summary = _size_sorted_summary()
+    assert resolve_actions([{"type": "rename", "part_id": "part_099", "row": 1, "name": "X"}], summary) == []
+    assert resolve_actions([{"type": "edge_band", "part_ids": ["part_011", "part_099"], "edges": "front", "tape_mm": 2}], summary) == []
+
+
+def test_edge_band_by_part_ids_and_ids_placed_in_rows():
+    summary = _size_sorted_summary()
+    by_ids = resolve_actions([{"type": "edge_band", "part_ids": ["part_011", "part_001"], "edges": "front", "tape_mm": 1}], summary)
+    assert set(by_ids[0]["overrides"]) == {"panel_40", "panel_5"}
+    # A model that puts ids where row numbers go is still understood.
+    in_rows = resolve_actions([{"type": "edge_band", "rows": ["part_011", "part_001"], "edges": "front", "tape_mm": 1}], summary)
+    assert set(in_rows[0]["overrides"]) == {"panel_40", "panel_5"}
+    # Row numbers still work when no id is given.
+    by_row = resolve_actions([{"type": "edge_band", "rows": [1], "edges": "front", "tape_mm": 1}], summary)
+    assert set(by_row[0]["overrides"]) == {"panel_40"}
+
+
+def test_assistant_route_renames_the_part_the_user_named(client, provider):  # noqa: F811
+    token = _signup(client, "partid@example.com")["token"]
+    project = _described_project(client, token)
+    cutlist = project["result"]["cutlist"]
+    target = cutlist[min(3, len(cutlist) - 1)]
+    assert target["id"] != cutlist[0]["id"]
+    provider(json.dumps({"reply": "Renaming.", "actions": [
+        {"type": "rename", "part_id": target["id"], "name": "Shelf Side Panel"}]}))
+
+    r = client.post(f"/api/projects/{project['id']}/ai/chat",
+                    json={"message": f"Rename {target['id']} to Shelf Side Panel"}, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    (proposal,) = r.json()["proposals"]
+    assert set(proposal["overrides"]) == set(target["board_ids"])
+    assert all(v == {"label": "Shelf Side Panel"} or v["label"].startswith("Shelf Side Panel")
+               for v in proposal["overrides"].values())
