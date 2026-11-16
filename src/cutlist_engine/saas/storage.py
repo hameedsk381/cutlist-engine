@@ -7,7 +7,7 @@ from pathlib import Path
 
 STORAGE_ROOT = Path(os.environ.get("CUTLIST_STORAGE_DIR", "data/storage"))
 
-ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae", ".glb", ".gltf"}
+ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae", ".glb", ".gltf", ".step", ".stp"}
 
 
 def project_dir(project_id: int | str) -> Path:

@@ -54,3 +54,4 @@ tests/_tmp_out/
 *.swp
 *.swo
 !tests/fixtures/*.obj
+!tests/real_models/**/*.obj

@@ -240,10 +240,29 @@ a tape total. **Quote for your customer** adds labour, hardware, tape price
 and margin; the shared link then shows the quote total and hides your costs.
 Both are saved with `PUT /api/projects/{id}/settings`.
 
+## Languages
+
+The web app has an English / हिन्दी switch (top of the projects page). Text
+lives in `frontend/src/i18n.ts`, keyed by the English string, so anything not
+yet translated shows in English. The Hindi was written without a
+native-speaker review; have one done before promoting it. Furniture
+descriptions must still be typed in English.
+
+## Accuracy library
+
+`tests/real_models/` holds real exporter files with hand-checked cut lists,
+and `tests/test_real_models.py` fails if any part is missing, extra or more
+than 0.5 mm off. See `tests/real_models/README.md` to add your own SketchUp or
+Fusion exports; that is the most valuable test you can add.
+
 ## Input formats
 
 - `OBJ`, `STL` (binary + ASCII), `DAE` (Collada with node names + transforms)
 - `GLB` / self-contained `glTF` 2.0 (node names + transforms; metres converted to mm)
+- `STEP` / `STP` — optional, needs the CAD kernel: `pip install -e .[step]`.
+  **Status: written but not yet run against the kernel.** Each solid becomes one part
+  (named `Part 1`, `Part 2`, ...; STEP part names are not read yet). Without the
+  kernel, STEP uploads are refused with a message saying how to enable them.
 - `DXF` (3DFACE, MESH and POLYFACE MESH entities, optional via `pip install -e .[cad]`)
 - mesh `JSON` for tests and integrations:
   ```json

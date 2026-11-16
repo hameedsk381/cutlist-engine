@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { t } from '../i18n';
 import { LayoutGrid, LoaderCircle, LogIn, UserPlus } from 'lucide-react';
 import { saasLogin, saasSignup, friendlyError } from '../api';
 import type { SaaSUser } from '../types';
@@ -37,7 +38,7 @@ export default function AuthView({ onAuthed, onTryWithoutAccount }: Props) {
     <main className="page page-narrow">
       <div className="auth-hero">
         <span className="brand-mark auth-mark" aria-hidden="true"><LayoutGrid size={28} /></span>
-        <h1>Turning designs into cut lists</h1>
+        <h1>{t('Turning designs into cut lists')}</h1>
         <p className="lead">
           Upload a 3D model, get nested sheet layouts, DXF, G-code and a
           workshop-ready parts list — in one click.
@@ -51,7 +52,7 @@ export default function AuthView({ onAuthed, onTryWithoutAccount }: Props) {
 
         <form onSubmit={submit} className="stack">
           <div className="field">
-            <label htmlFor="auth-email">Email</label>
+            <label htmlFor="auth-email">{t('Email')}</label>
             <input
               id="auth-email"
               className="input"
@@ -64,7 +65,7 @@ export default function AuthView({ onAuthed, onTryWithoutAccount }: Props) {
             />
           </div>
           <div className="field">
-            <label htmlFor="auth-password">Password</label>
+            <label htmlFor="auth-password">{t('Password')}</label>
             <input
               id="auth-password"
               className="input"
@@ -82,18 +83,18 @@ export default function AuthView({ onAuthed, onTryWithoutAccount }: Props) {
 
           <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy}>
             {busy
-              ? <><LoaderCircle size={20} className="spinner" /> Working…</>
+              ? <><LoaderCircle size={20} className="spinner" /> {t('Working…')}</>
               : mode === 'login'
-                ? <><LogIn size={20} /> Sign in</>
-                : <><UserPlus size={20} /> Create account</>}
+                ? <><LogIn size={20} /> {t('Sign in')}</>
+                : <><UserPlus size={20} /> {t('Create account')}</>}
           </button>
         </form>
 
         <p className="muted small" style={{ textAlign: 'center', marginTop: 14 }}>
           {mode === 'login' ? (
-            <>New here? <button type="button" className="linklike" onClick={() => { setMode('signup'); setError(null); }}>Create a free account</button></>
+            <>{t('New here?')} <button type="button" className="linklike" onClick={() => { setMode('signup'); setError(null); }}>{t('Create a free account')}</button></>
           ) : (
-            <>Already have an account? <button type="button" className="linklike" onClick={() => { setMode('login'); setError(null); }}>Sign in</button></>
+            <>{t('Already have an account?')} <button type="button" className="linklike" onClick={() => { setMode('login'); setError(null); }}>{t('Sign in')}</button></>
           )}
         </p>
       </section>

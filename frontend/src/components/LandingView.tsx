@@ -1,4 +1,5 @@
 import { Box, Calculator, FileCode2, LayoutGrid, LogIn, Ruler, Share2, Wrench } from 'lucide-react';
+import { t } from '../i18n';
 
 interface Props {
   onOpenApp: () => void;
@@ -42,18 +43,18 @@ export default function LandingView({ onOpenApp }: Props) {
     <main className="landing">
       <section className="landing-hero">
         <span className="brand-mark landing-mark" aria-hidden="true"><LayoutGrid size={34} /></span>
-        <h1>From 3D model to cutting plan, in one click</h1>
+        <h1>{t('From 3D model to cutting plan, in one click')}</h1>
         <p className="lead">
           CutList turns any furniture model into a parts list, nested plywood sheets,
           DXF and CNC-ready G-code — so you buy the right amount of board and cut without guesswork.
         </p>
         <div className="row" style={{ justifyContent: 'center', marginTop: 24 }}>
           <button type="button" className="btn btn-primary btn-lg" onClick={onOpenApp}>
-            Start free — no card needed
+            {t('Start free — no card needed')}
           </button>
         </div>
         <p className="muted small" style={{ marginTop: 10 }}>
-          Free plan: 50 projects a month
+          {t('Free plan: 50 projects a month')}
         </p>
       </section>
 
@@ -69,25 +70,25 @@ export default function LandingView({ onOpenApp }: Props) {
 
       <section className="landing-pricing">
         <div className="card" style={{ textAlign: 'center', padding: '36px 24px' }}>
-          <h2>Simple pricing</h2>
+          <h2>{t('Simple pricing')}</h2>
           <p className="muted" style={{ maxWidth: 520, margin: '8px auto 24px' }}>
             Start free. Upgrade when your workshop does — bigger jobs, more projects,
             priority processing.
           </p>
           <div className="landing-plans">
             <div className="landing-plan">
-              <h3>Free</h3>
+              <h3>{t('Free')}</h3>
               <p className="num">₹0</p>
-              <p className="muted small">50 projects / month<br />All export formats</p>
+              <p className="muted small">50 projects / month<br />{t('All export formats')}</p>
             </div>
             <div className="landing-plan landing-plan-pro">
-              <h3>Pro</h3>
-              <p className="num">Coming soon</p>
-              <p className="muted small">Unlimited projects<br />API access · priority queue</p>
+              <h3>{t('Pro')}</h3>
+              <p className="num">{t('Coming soon')}</p>
+              <p className="muted small">{t('Unlimited projects')}<br />{t('API access · priority queue')}</p>
             </div>
           </div>
           <button type="button" className="btn btn-primary btn-lg" style={{ marginTop: 20 }} onClick={onOpenApp}>
-            <LogIn size={20} /> Create your free account
+            <LogIn size={20} /> {t('Create your free account')}
           </button>
         </div>
       </section>

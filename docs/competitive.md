@@ -85,6 +85,9 @@ answer is CNC files, share links, offcut reuse and cost reports.
 9. **Client quote** — *Shipped.* Labour, hardware, tape and margin on top of
    material cost. The shared link shows the customer the total and hides the
    workshop's costs and margin.
+10. **Hindi interface** — *Shipped, unreviewed.* English / हिन्दी switch across
+    the main screens. No global rival offers this. The Hindi needs a
+    native-speaker review, and descriptions are still typed in English.
 7. **Offcut carry-over across projects** — *Shipped (M4, commit `7eb3ac7`).*
    Save leftover pieces, reserve them, and nest the next job on them before
    opening a new sheet. Matches CutPlan and cutlistlab; strong retention hook.
@@ -92,18 +95,21 @@ answer is CNC files, share links, offcut reuse and cost reports.
 ## Where we're behind (roadmap candidates)
 
 1. **Input formats** — *Partial.* glTF / GLB import is shipped alongside
-   OBJ, STL, DAE and mesh DXF. **STEP is not built**: it needs a CAD kernel
-   (OpenCascade) as a dependency, which is a packaging decision for the Docker
-   image and desktop app. STEP is what Fusion, SolidWorks and Onshape export,
-   so this is still the main Tier-2 gap.
+   OBJ, STL, DAE and mesh DXF. **STEP is written but unverified**: it is an
+   optional add-on (`pip install -e .[step]`, the OpenCascade kernel) and has
+   not yet been run against the kernel. It is not in the default Docker image
+   or desktop app, and it does not read STEP part names. STEP is what Fusion,
+   SolidWorks and Onshape export, so finish and verify this.
 2. **True-shape nesting** — *Not built.* Shaped parts keep their real outline
    in DXF and G-code, but nesting places every part by its bounding rectangle.
    Cutlist Evolution nests curved outlines natively; this is their flagship
    story and a real gap, not a matter of depth.
-3. **Part extraction accuracy** — *Shipped in code, unproven on real models.*
-   Per-part extraction (commit `84628cc`) reads touching parts and mixed
-   thicknesses correctly on synthetic cabinets. It has not been run on a
-   library of real SketchUp exports; do that before any accuracy claim.
+3. **Part extraction accuracy** — *Test library started, designer models still
+   needed.* `tests/real_models/` runs real Blender exports (OBJ, GLB, STL) of
+   a cabinet with a rotated parent, unapplied scale, a 6 mm back, a notched
+   panel and a handle, and every part reads exactly. No SketchUp or Fusion
+   model drawn by a real designer is in it yet; add those before any accuracy
+   claim.
 4. **SketchUp extension** — *Written, untested.* "Send to CutList" uploads
    the model to a hosted or self-hosted server with an API key. It has not
    been run inside SketchUp yet. Test it, package it as an `.rbz`, then list

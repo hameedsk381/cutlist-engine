@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { t, tf } from '../i18n';
 import { ArrowRight, ChevronRight, CircleCheck, Info, Search, TriangleAlert } from 'lucide-react';
 import { tidyName } from '../format';
 import type { Board, ExtractResult, ProcessConfig, ReviewDecisions } from '../types';
@@ -43,7 +44,7 @@ function Thumb({ board }: { board: Board }) {
   const path = (pts: [number, number][]) => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ') + ' Z';
   const d = [path(board.contour), ...(board.holes || []).map(path)].join(' ');
   return (
-    <svg viewBox={`${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`} width="68" height="68" role="img" aria-label="Part shape">
+    <svg viewBox={`${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`} width="68" height="68" role="img" aria-label={t('Part shape')}>
       <path d={d} fill="var(--wood)" stroke="var(--part-line)" strokeWidth={Math.max(w, h) / 40} fillRule="evenodd" strokeLinejoin="round" />
     </svg>
   );
@@ -85,17 +86,17 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
     return (
       <main className="page page-narrow fade-in">
         <div className="page-head">
-          <h1>We could not find any boards</h1>
-          <p className="lead">The file opened, but nothing in it looks like a flat board with thickness.</p>
+          <h1>{t('We could not find any boards')}</h1>
+          <p className="lead">{t('The file opened, but nothing in it looks like a flat board with thickness.')}</p>
         </div>
         <div className="notice notice-warn">
           <TriangleAlert size={20} />
           <div>
-            <strong>How to fix the design</strong>
+            <strong>{t('How to fix the design')}</strong>
             <ul>
-              <li>Draw every board as a solid with its real thickness, not a flat face.</li>
-              <li>Make each board its own group or component.</li>
-              <li>Export in millimetres.</li>
+              <li>{t('Draw every board as a solid with its real thickness, not a flat face.')}</li>
+              <li>{t('Make each board its own group or component.')}</li>
+              <li>{t('Export in millimetres.')}</li>
             </ul>
           </div>
         </div>
@@ -106,8 +107,8 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
   return (
     <main className="page fade-in">
       <div className="page-head">
-        <h1>We found {data.boards.length} {data.boards.length === 1 ? 'part' : 'parts'}</h1>
-        <p className="lead">Check the sizes match your design. Rename a part by tapping its name. Switch off anything you do not want cut.</p>
+        <h1>{tf('We found {count} parts', { count: data.boards.length })}</h1>
+        <p className="lead">{t('Check the sizes match your design. Rename a part by tapping its name. Switch off anything you do not want cut.')}</p>
       </div>
 
       <div className="stack">
@@ -115,22 +116,22 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
           <div className="notice notice-info">
             <Info size={22} />
             <div>
-              <strong>How these sizes were worked out</strong>
+              <strong>{t('How these sizes were worked out')}</strong>
               <ul>{designNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
             </div>
           </div>
         )}
 
         {toCheck.length === 0 ? (
-          <div className="notice notice-ok"><CircleCheck size={22} /><div><strong>Every part was measured cleanly.</strong> A quick look at the sizes is still a good idea.</div></div>
+          <div className="notice notice-ok"><CircleCheck size={22} /><div><strong>{t('Every part was measured cleanly.')}</strong> {t('A quick look at the sizes is still a good idea.')}</div></div>
         ) : (
-          <div className="notice notice-warn"><TriangleAlert size={22} /><div><strong>{toCheck.length} {toCheck.length === 1 ? 'part needs' : 'parts need'} a look.</strong> They are shown first, with the reason.</div></div>
+          <div className="notice notice-warn"><TriangleAlert size={22} /><div><strong>{toCheck.length} {toCheck.length === 1 ? 'part needs' : 'parts need'} a look.</strong> {t('They are shown first, with the reason.')}</div></div>
         )}
 
         {guessed > 0 && (
           <div className="notice notice-warn">
             <TriangleAlert size={22} />
-            <div><strong>{guessed} {guessed === 1 ? 'part was' : 'parts were'} worked out from loose faces.</strong> The design did not have them as closed solid boards, so please check their sizes carefully.</div>
+            <div><strong>{guessed} {guessed === 1 ? 'part was' : 'parts were'} worked out from loose faces.</strong> {t('The design did not have them as closed solid boards, so please check their sizes carefully.')}</div>
           </div>
         )}
 
@@ -140,7 +141,7 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
             <div className="notice notice-info" style={{ marginTop: 8 }}>
               <Info size={20} />
               <div>
-                Usually handles, legs or decoration. If one of these is a real board, fix it in the design and upload again.
+                {t('Usually handles, legs or decoration. If one of these is a real board, fix it in the design and upload again.')}
                 <ul>{skipped.map((s, i) => <li key={i}>{s}</li>)}</ul>
               </div>
             </div>
@@ -150,7 +151,7 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
         {data.boards.length > 12 && (
           <div className="input-row" style={{ maxWidth: 420 }}>
             <Search size={20} color="var(--text-2)" />
-            <input className="input" style={{ maxWidth: 'none' }} type="search" placeholder="Find a part by name or size" aria-label="Find a part" value={query} onChange={e => setQuery(e.target.value)} />
+            <input className="input" style={{ maxWidth: 'none' }} type="search" placeholder={t('Find a part by name or size')} aria-label={t('Find a part')} value={query} onChange={e => setQuery(e.target.value)} />
           </div>
         )}
 
@@ -180,8 +181,8 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
 
                 <div className="part-foot">
                   {needsLook
-                    ? <span className="tag tag-warn"><TriangleAlert size={14} /> Please check</span>
-                    : <span className="tag tag-ok"><CircleCheck size={14} /> Looks right</span>}
+                    ? <span className="tag tag-warn"><TriangleAlert size={14} /> {t('Please check')}</span>
+                    : <span className="tag tag-ok"><CircleCheck size={14} /> {t('Looks right')}</span>}
                   {otherThickness && <span className="tag tag-muted">Separate {board.thickness} mm sheet</span>}
                   <span className="spacer" />
                   <label className="switch">
@@ -202,13 +203,13 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
       <div className="actionbar">
         <div className="actionbar-inner">
           <span>
-            <strong className="num">{included} of {data.boards.length}</strong> parts will be cut
+            <strong className="num">{tf('{count} of {total} parts will be cut', { count: included, total: data.boards.length })}</strong>
           </span>
           {included < data.boards.length && (
-            <button type="button" className="btn btn-ghost" onClick={includeAll}>Include all</button>
+            <button type="button" className="btn btn-ghost" onClick={includeAll}>{t('Include all')}</button>
           )}
           <button type="button" className="btn btn-primary btn-lg" disabled={included === 0 || busy} onClick={onContinue}>
-            Make cutting plan <ArrowRight size={22} />
+            {t('Make cutting plan')} <ArrowRight size={22} />
           </button>
         </div>
       </div>

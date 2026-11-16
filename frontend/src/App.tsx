@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { t } from './i18n';
 import { Check, LayoutGrid, LoaderCircle, LogIn, MessageCircle, RotateCcw } from 'lucide-react';
+import LanguageSwitch from './components/LanguageSwitch';
 import UploadView from './components/UploadView';
 import ReviewView from './components/ReviewView';
 import Dashboard from './components/Dashboard';
@@ -56,7 +58,7 @@ export default function App() {
 
   const handleUpload = async (file: File, cfg: ProcessConfig, described = false) => {
     if (!described) setDesignNotes([]);
-    setBusy('Reading your design and finding the parts…');
+    setBusy(t('Reading your design and finding the parts…'));
     setError(null);
     try {
       const data = await extractBoards(file, { ...cfg });
@@ -81,7 +83,7 @@ export default function App() {
   };
 
   const handleDescribe = async (description: string, cfg: ProcessConfig) => {
-    setBusy('Working out the parts from your description…');
+    setBusy(t('Working out the parts from your description…'));
     setError(null);
     try {
       // The server turns the description into a real 3D model; from here it is
@@ -97,7 +99,7 @@ export default function App() {
 
   const handleFinalize = async (force = false) => {
     if (!sessionId) return;
-    setBusy('Fitting the parts onto sheets…');
+    setBusy(t('Fitting the parts onto sheets…'));
     setError(null);
     try {
       const data = await finalizeSession(sessionId, decisions, {}, force);
@@ -158,8 +160,9 @@ export default function App() {
               <span className="brand-name">CutList</span>
             </div>
             <div className="topbar-actions">
+            <LanguageSwitch />
               <button type="button" className="btn btn-ghost" onClick={() => setAuthState('auth')}>
-                <LogIn size={18} /> Sign in
+                <LogIn size={18} /> {t('Sign in')}
               </button>
             </div>
           </div>
@@ -197,7 +200,7 @@ export default function App() {
             <span className="brand-name">CutList</span>
           </div>
 
-          <nav className="stepper" aria-label="Progress">
+          <nav className="stepper" aria-label={t('Progress')}>
             {STEPS.map((step, i) => {
               const state = i < currentIndex ? 'is-done' : i === currentIndex ? 'is-current' : '';
               const clickable = canGoTo(step.view);
@@ -212,7 +215,7 @@ export default function App() {
                     onClick={() => clickable && setView(step.view)}
                   >
                     <span className="step-dot">{i < currentIndex ? <Check size={16} /> : i + 1}</span>
-                    <span className="step-label">{step.label}</span>
+                    <span className="step-label">{t(step.label)}</span>
                   </button>
                 </span>
               );
@@ -220,19 +223,20 @@ export default function App() {
           </nav>
 
           <div className="topbar-actions">
+            <LanguageSwitch />
             {authState === 'legacy' && (
               <button type="button" className="btn btn-ghost" onClick={() => setAuthState('anon')}>
-                <span className="brand-name">Sign in</span>
+                <span className="brand-name">{t('Sign in')}</span>
               </button>
             )}
             {view === 'dashboard' && result && (
               <button type="button" className="btn btn-ghost" onClick={() => setChatOpen(true)}>
-                <MessageCircle size={20} /> <span className="brand-name">Ask</span>
+                <MessageCircle size={20} /> <span className="brand-name">{t('Ask')}</span>
               </button>
             )}
             {view !== 'upload' && (
-              <button type="button" className="btn btn-ghost" onClick={handleReset} aria-label="Start a new job">
-                <RotateCcw size={20} /> <span className="brand-name">New job</span>
+              <button type="button" className="btn btn-ghost" onClick={handleReset} aria-label={t('Start a new job')}>
+                <RotateCcw size={20} /> <span className="brand-name">{t('New job')}</span>
               </button>
             )}
           </div>
@@ -272,7 +276,7 @@ export default function App() {
           <div className="busy">
             <LoaderCircle size={40} className="spinner" />
             <h2 style={{ marginTop: 12 }}>{busy}</h2>
-            <p className="muted small" style={{ marginTop: 6 }}>Large designs can take up to a minute.</p>
+            <p className="muted small" style={{ marginTop: 6 }}>{t('Large designs can take up to a minute.')}</p>
           </div>
         </div>
       )}

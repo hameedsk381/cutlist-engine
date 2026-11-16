@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from '../i18n';
 import {
   ChevronLeft, Check, Clock, Copy, FileText, FolderOpen, KeyRound,
   LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Trash2, TriangleAlert, Ruler,
 } from 'lucide-react';
 import UploadView from './UploadView';
 import Dashboard from './Dashboard';
+import LanguageSwitch from './LanguageSwitch';
 import LinearView from './LinearView';
 import { EdgeBandingCard, QuoteCard } from './PlanTools';
 import {
@@ -27,10 +29,10 @@ type Stage = 'list' | 'new' | 'job' | 'dashboard' | 'linear';
 const POLL_MS = 2500;
 
 function statusTag(status: string) {
-  if (status === 'done') return <span className="tag tag-ok">Ready</span>;
-  if (status === 'failed') return <span className="tag tag-warn">Failed</span>;
-  if (status === 'processing') return <span className="tag tag-muted">Processing…</span>;
-  return <span className="tag tag-muted">Queued</span>;
+  if (status === 'done') return <span className="tag tag-ok">{t('Ready')}</span>;
+  if (status === 'failed') return <span className="tag tag-warn">{t('Failed')}</span>;
+  if (status === 'processing') return <span className="tag tag-muted">{t('Processing…')}</span>;
+  return <span className="tag tag-muted">{t('Queued')}</span>;
 }
 
 export default function ProjectsView({ user, onSignOut }: Props) {
@@ -136,7 +138,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
 
   const handleNewProject = (file: File, cfg: ProcessConfig) => {
     setDesignNotes([]);
-    setBusy('Uploading your design…');
+    setBusy(t('Uploading your design…'));
     setError(null);
     void (async () => {
       try {
@@ -155,7 +157,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   };
 
   const handleDescribeProject = (description: string, cfg: ProcessConfig) => {
-    setBusy('Working out the parts from your description…');
+    setBusy(t('Working out the parts from your description…'));
     setError(null);
     void (async () => {
       try {
@@ -176,7 +178,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
 
   const handleApplyBanding = (overrides: PartOverrides) => {
     if (!active) return;
-    setBusy('Updating the cutting plan…');
+    setBusy(t('Updating the cutting plan…'));
     setError(null);
     void (async () => {
       try {
@@ -197,7 +199,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
 
   const handleSaveQuote = (next: QuoteInput | null) => {
     if (!active) return;
-    setBusy('Saving the quote…');
+    setBusy(t('Saving the quote…'));
     setError(null);
     void (async () => {
       try {
@@ -213,7 +215,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   };
 
   const handleRerun = (projectId: number) => {
-    setBusy('Queuing a fresh run…');
+    setBusy(t('Queuing a fresh run…'));
     setError(null);
     void (async () => {
       try {
@@ -241,7 +243,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   };
 
   const handleResendVerification = async () => {
-    setBusy('Sending the verification email…');
+    setBusy(t('Sending the verification email…'));
     setError(null);
     try {
       const r = await resendVerification();
@@ -284,7 +286,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   }, [keysOpen, refreshKeys]);
 
   const handleCreateKey = async () => {
-    setBusy('Creating API key…');
+    setBusy(t('Creating API key…'));
     setError(null);
     try {
       const key = await createApiKey(`Key ${apiKeys.length + 1}`);
@@ -344,7 +346,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     return (
       <main className="page">
         <button type="button" className="btn btn-ghost" onClick={backToList}>
-          <ChevronLeft size={20} /> Your projects
+          <ChevronLeft size={20} /> {t('Your projects')}
         </button>
         <UploadView
           onUploadFile={handleNewProject}
@@ -371,11 +373,11 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     return (
       <main className="page page-narrow">
         <button type="button" className="btn btn-ghost" onClick={backToList}>
-          <ChevronLeft size={20} /> Your projects
+          <ChevronLeft size={20} /> {t('Your projects')}
         </button>
         <section className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
           <LoaderCircle size={44} className="spinner" style={{ color: 'var(--primary)' }} />
-          <h2 style={{ marginTop: 16 }}>Making the cutting plan…</h2>
+          <h2 style={{ marginTop: 16 }}>{t('Making the cutting plan…')}</h2>
           <p className="muted">{active?.name}</p>
           <p className="muted small" style={{ marginTop: 8 }}>
             Finding parts, nesting sheets, writing DXF and G-code.
@@ -390,7 +392,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     return (
       <main className="page">
         <button type="button" className="btn btn-ghost" onClick={backToList}>
-          <ChevronLeft size={20} /> Your projects
+          <ChevronLeft size={20} /> {t('Your projects')}
         </button>
         <Dashboard
           result={result}
@@ -416,18 +418,19 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     <main className="page">
       <div className="page-head row">
         <div>
-          <h1>Your projects</h1>
+          <h1>{t('Your projects')}</h1>
           <p className="muted">Signed in as {user.email} · {user.plan} plan</p>
         </div>
         <div className="spacer" />
+        <LanguageSwitch />
         <button type="button" className="btn btn-ghost" onClick={onSignOut}>
-          <LogOut size={18} /> Sign out
+          <LogOut size={18} /> {t('Sign out')}
         </button>
         <button type="button" className="btn" onClick={() => setStage('linear')}>
-          <Ruler size={18} /> Cut lengths
+          <Ruler size={18} /> {t('Cut lengths')}
         </button>
         <button type="button" className="btn btn-primary" onClick={startNewProject}>
-          <Plus size={18} /> New project
+          <Plus size={18} /> {t('New project')}
         </button>
       </div>
 
@@ -435,7 +438,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       {notice && (
         <div className="notice notice-info" role="status">
           <Check size={20} /> <span className="share-notice-text">{notice}</span>
-          <button type="button" className="linklike" onClick={() => setNotice(null)}>Dismiss</button>
+          <button type="button" className="linklike" onClick={() => setNotice(null)}>{t('Dismiss')}</button>
         </div>
       )}
       {!user.email_verified && !bannerDismissed && (
@@ -446,10 +449,10 @@ export default function ProjectsView({ user, onSignOut }: Props) {
             We sent a link to <strong>{user.email}</strong>.
           </span>
           <button type="button" className="linklike" onClick={handleResendVerification} disabled={!!busy}>
-            Resend email
+            {t('Resend email')}
           </button>
           <button type="button" className="linklike muted" onClick={() => setBannerDismissed(true)}>
-            Dismiss
+            {t('Dismiss')}
           </button>
         </div>
       )}
@@ -457,11 +460,11 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       {projects.length === 0 && loaded ? (
         <section className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
           <FolderOpen size={40} style={{ color: 'var(--text-2)' }} />
-          <h2 style={{ marginTop: 12 }}>No projects yet</h2>
-          <p className="muted">Upload a 3D model to get your first cutting plan.</p>
+          <h2 style={{ marginTop: 12 }}>{t('No projects yet')}</h2>
+          <p className="muted">{t('Upload a 3D model to get your first cutting plan.')}</p>
           <button type="button" className="btn btn-primary btn-lg" style={{ marginTop: 16 }}
                   onClick={startNewProject}>
-            <Plus size={18} /> New project
+            <Plus size={18} /> {t('New project')}
           </button>
         </section>
       ) : projects.length === 0 ? (
@@ -486,19 +489,19 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                 {statusTag(p.job?.status ?? 'queued')}
                 {p.job?.status === 'done' && (
                   <>
-                    <button type="button" className="btn" onClick={() => handleShare(p.id)} aria-label="Copy share link">
-                      <Share2 size={16} /> Share
+                    <button type="button" className="btn" onClick={() => handleShare(p.id)} aria-label={t('Copy share link')}>
+                      <Share2 size={16} /> {t('Share')}
                     </button>
-                    <button type="button" className="btn" onClick={() => handleSaveOffcuts(p.id)} aria-label="Save reusable offcuts">
-                      <PackagePlus size={16} /> Save offcuts
+                    <button type="button" className="btn" onClick={() => handleSaveOffcuts(p.id)} aria-label={t('Save reusable offcuts')}>
+                      <PackagePlus size={16} /> {t('Save offcuts')}
                     </button>
                     <button type="button" className="btn" onClick={() => openDashboard(p.id, p.job)}>
-                      Open plan
+                      {t('Open plan')}
                     </button>
                   </>
                 )}
                 {(p.job?.status === 'done' || p.job?.status === 'failed') && (
-                  <button type="button" className="btn" onClick={() => handleRerun(p.id)} aria-label="Run again">
+                  <button type="button" className="btn" onClick={() => handleRerun(p.id)} aria-label={t('Run again')}>
                     <RotateCcw size={16} />
                   </button>
                 )}
@@ -516,7 +519,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
         <section className="card keys-panel">
           <div className="row">
             <PackagePlus size={20} style={{ color: 'var(--text-2)' }} />
-            <h2 style={{ margin: 0 }}>Offcut shelf</h2>
+            <h2 style={{ margin: 0 }}>{t('Offcut shelf')}</h2>
             <span className="muted small">
               {shelf.count} {shelf.count === 1 ? 'piece' : 'pieces'} · {shelf.total_area_m2.toFixed(2)} m² — reused free when you tick “Use my offcut shelf”
             </span>
@@ -524,7 +527,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           </div>
           <table className="keys-table">
             <thead>
-              <tr><th>Size</th><th>Thickness</th><th>Area</th><th /></tr>
+              <tr><th>{t('Size')}</th><th>{t('Thickness')}</th><th>{t('Area')}</th><th /></tr>
             </thead>
             <tbody>
               {shelf.offcuts.map((o) => (
@@ -533,8 +536,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                   <td>{o.thickness} mm</td>
                   <td>{o.area_m2.toFixed(2)} m²</td>
                   <td>
-                    <button type="button" className="btn" onClick={() => handleDeleteOffcut(o.id)} aria-label="Discard offcut">
-                      <Trash2 size={16} /> Discard
+                    <button type="button" className="btn" onClick={() => handleDeleteOffcut(o.id)} aria-label={t('Discard offcut')}>
+                      <Trash2 size={16} /> {t('Discard')}
                     </button>
                   </td>
                 </tr>
@@ -548,8 +551,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       <section className="card keys-panel">
         <div className="row">
           <KeyRound size={20} style={{ color: 'var(--text-2)' }} />
-          <h2 style={{ margin: 0 }}>API keys</h2>
-          <span className="muted small">Let your CNC software pull plans on its own</span>
+          <h2 style={{ margin: 0 }}>{t('API keys')}</h2>
+          <span className="muted small">{t('Let your CNC software pull plans on its own')}</span>
           <div className="spacer" />
           <button type="button" className="btn" onClick={() => setKeysOpen(!keysOpen)}>
             {keysOpen ? 'Hide' : 'Manage'}
@@ -560,7 +563,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
             {newKey && (
               <div className="notice notice-warn key-reveal">
                 <div>
-                  <strong>Copy your new key now — it will not be shown again:</strong>
+                  <strong>{t('Copy your new key now — it will not be shown again:')}</strong>
                   <code className="key-code">{newKey.key}</code>
                 </div>
                 <button
@@ -570,16 +573,16 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                     try { await navigator.clipboard.writeText(newKey.key); setNotice('API key copied to clipboard.'); } catch { /* clipboard blocked */ }
                   }}
                 >
-                  <Copy size={16} /> Copy
+                  <Copy size={16} /> {t('Copy')}
                 </button>
               </div>
             )}
             {apiKeys.length === 0 && !newKey ? (
-              <p className="muted small">No keys yet. A key lets scripts and CNC software call the CutList API without your password.</p>
+              <p className="muted small">{t('No keys yet. A key lets scripts and CNC software call the CutList API without your password.')}</p>
             ) : (
               <table className="keys-table">
                 <thead>
-                  <tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th /></tr>
+                  <tr><th>{t('Name')}</th><th>{t('Key')}</th><th>{t('Created')}</th><th>{t('Last used')}</th><th /></tr>
                 </thead>
                 <tbody>
                   {apiKeys.map((k) => (
@@ -590,7 +593,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                       <td>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
                       <td>
                         <button type="button" className="btn" onClick={() => handleRevokeKey(k.id)} aria-label={`Revoke ${k.name}`}>
-                          <Trash2 size={16} /> Revoke
+                          <Trash2 size={16} /> {t('Revoke')}
                         </button>
                       </td>
                     </tr>
@@ -599,7 +602,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
               </table>
             )}
             <button type="button" className="btn btn-primary" onClick={handleCreateKey} disabled={!!busy} style={{ alignSelf: 'flex-start' }}>
-              <Plus size={18} /> Create API key
+              <Plus size={18} /> {t('Create API key')}
             </button>
           </div>
         )}

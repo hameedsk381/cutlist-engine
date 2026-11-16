@@ -1,0 +1,63 @@
+{
+  "thickness": 18,
+  "parts": [
+    {
+      "name": "Left side",
+      "length": 720,
+      "width": 560,
+      "thickness": 18
+    },
+    {
+      "name": "Right side",
+      "length": 720,
+      "width": 560,
+      "thickness": 18
+    },
+    {
+      "name": "Bottom",
+      "length": 564,
+      "width": 560,
+      "thickness": 18
+    },
+    {
+      "name": "Top rail front",
+      "length": 564,
+      "width": 100,
+      "thickness": 18
+    },
+    {
+      "name": "Top rail back",
+      "length": 564,
+      "width": 100,
+      "thickness": 18
+    },
+    {
+      "name": "Shelf",
+      "length": 564,
+      "width": 534,
+      "thickness": 18
+    },
+    {
+      "name": "Back",
+      "length": 684,
+      "width": 564,
+      "thickness": 6
+    },
+    {
+      "name": "Shutter",
+      "length": 720,
+      "width": 600,
+      "thickness": 18
+    },
+    {
+      "name": "End panel",
+      "length": 820,
+      "width": 780,
+      "thickness": 18
+    }
+  ],
+  "not_panels": [
+    "Handle"
+  ],
+  "source": "Blender 5.2.3 LTS, built by make_cabinet.py"
+}

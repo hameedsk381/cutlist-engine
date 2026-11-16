@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { t } from '../i18n';
 import type { DragEvent } from 'react';
 import { ArrowRight, Info, Box, ChevronRight, CircleCheck, PenLine, TriangleAlert, Upload, X } from 'lucide-react';
 import type { ProcessConfig } from '../types';
@@ -20,7 +21,7 @@ const SHEETS = [
   { label: '6 × 4 ft', w: 1830, h: 1220 },
 ];
 const THICKNESSES = [6, 12, 18, 25];
-const ACCEPT = '.obj,.dae,.glb,.gltf,.stl,.dxf,.json';
+const ACCEPT = '.obj,.dae,.glb,.gltf,.step,.stp,.stl,.dxf,.json';
 const EXAMPLES = [
   'Wardrobe 2100 high, 1200 wide, 600 deep, 2 shutters, 4 shelves',
   'Kitchen base unit 720 high, 600 wide, 560 deep, 1 shelf, 1 shutter',
@@ -79,19 +80,19 @@ export default function UploadView({
   return (
     <main className="page page-narrow fade-in">
       <div className="page-head">
-        <h1>What are you building?</h1>
-        <p className="lead">Add your furniture design and get a cutting plan: every part, how to cut each sheet, and how many sheets to buy.</p>
+        <h1>{t('What are you building?')}</h1>
+        <p className="lead">{t('Add your furniture design and get a cutting plan: every part, how to cut each sheet, and how many sheets to buy.')}</p>
       </div>
 
       <div className="stack">
         <div className="choice-grid" role="group" aria-label="How do you want to add your design?">
           <button type="button" className="choice" aria-pressed={mode === 'file'} onClick={() => setMode('file')}>
             <span className="choice-icon"><Box size={24} /></span>
-            <span><strong>I have a 3D file</strong><span>From SketchUp, Fusion, Blender…</span></span>
+            <span><strong>{t('I have a 3D file')}</strong><span>{t('From SketchUp, Fusion, Blender…')}</span></span>
           </button>
           <button type="button" className="choice" aria-pressed={mode === 'describe'} onClick={() => setMode('describe')}>
             <span className="choice-icon"><PenLine size={24} /></span>
-            <span><strong>I'll describe it</strong><span>Type the size, we work out the parts</span></span>
+            <span><strong>{t('I\'ll describe it')}</strong><span>{t('Type the size, we work out the parts')}</span></span>
           </button>
         </div>
 
@@ -105,8 +106,8 @@ export default function UploadView({
                   <strong>{file.name}</strong>
                   <div className="small muted">{file.size < 1048576 ? `${Math.max(1, Math.round(file.size / 1024))} KB` : `${(file.size / 1048576).toFixed(1)} MB`} · ready</div>
                 </div>
-                <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()}>Change</button>
-                <button type="button" className="icon-btn" aria-label="Remove file" onClick={() => setFile(null)}><X size={20} /></button>
+                <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()}>{t('Change')}</button>
+                <button type="button" className="icon-btn" aria-label={t('Remove file')} onClick={() => setFile(null)}><X size={20} /></button>
               </div>
             ) : (
               <button
@@ -118,7 +119,7 @@ export default function UploadView({
                 onDrop={onDrop}
               >
                 <span className="dropzone-icon"><Upload size={28} /></span>
-                <strong style={{ fontSize: 18 }}>Choose your 3D file</strong>
+                <strong style={{ fontSize: 18 }}>{t('Choose your 3D file')}</strong>
                 <span className="muted">or drag it here · OBJ, DAE, GLB, STL or DXF</span>
               </button>
             )}
@@ -126,27 +127,27 @@ export default function UploadView({
               <div className="notice notice-danger" role="alert"><TriangleAlert size={20} /><div>{fileError}</div></div>
             )}
             <details className="more">
-              <summary><ChevronRight size={18} /> How do I get this file from SketchUp?</summary>
+              <summary><ChevronRight size={18} /> {t('How do I get this file from SketchUp?')}</summary>
               <div className="notice notice-info" style={{ marginTop: 8 }}>
                 <div>
                   <ol style={{ margin: 0, paddingLeft: 20 }}>
-                    <li>Make every board its own <strong>group or component</strong>, drawn at its real thickness.</li>
-                    <li>Hide handles, hinges and screws.</li>
-                    <li>Go to <strong>File → Export → 3D Model</strong> and save as <strong>OBJ</strong> or <strong>DAE</strong>, in millimetres.</li>
+                    <li>{t('Make every board its own')} <strong>group or component</strong>, drawn at its real thickness.</li>
+                    <li>{t('Hide handles, hinges and screws.')}</li>
+                    <li>{t('Go to')} <strong>{t('File → Export → 3D Model')}</strong> and save as <strong>{t('OBJ')}</strong> or <strong>{t('DAE')}</strong>, in millimetres.</li>
                   </ol>
                 </div>
               </div>
             </details>
           </section>
         ) : (
-          <section className="field" aria-label="Description">
-            <label htmlFor="desc">Describe the furniture</label>
+          <section className="field" aria-label={t('Description')}>
+            <label htmlFor="desc">{t('Describe the furniture')}</label>
             <textarea
               id="desc" className="textarea" value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Example: Wardrobe 2100 high, 1200 wide, 600 deep, 2 shutters, 4 shelves"
+              placeholder={t('Example: Wardrobe 2100 high, 1200 wide, 600 deep, 2 shutters, 4 shelves')}
             />
-            <span className="field-help">Give height, width and depth in mm, and how many shelves, shutters or drawers.</span>
+            <span className="field-help">{t('Give height, width and depth in mm, and how many shelves, shutters or drawers.')}</span>
             <div className="chips">
               {EXAMPLES.map(ex => (
                 <button key={ex} type="button" className="chip" style={{ fontWeight: 500, fontSize: 14 }} onClick={() => setDescription(ex)}>
@@ -156,16 +157,16 @@ export default function UploadView({
             </div>
             <div className="notice notice-info">
               <Info size={20} />
-              <div className="small">We work out every panel with fixed carcass rules and show you the rules used. You check the parts before anything is cut.</div>
+              <div className="small">{t('We work out every panel with fixed carcass rules and show you the rules used. You check the parts before anything is cut.')}</div>
             </div>
           </section>
         )}
 
-        <section className="card stack" aria-label="Your material">
-          <h2>Your plywood</h2>
+        <section className="card stack" aria-label={t('Your material')}>
+          <h2>{t('Your plywood')}</h2>
 
           <div className="field">
-            <span className="field-label" id="sheet-label">Sheet size</span>
+            <span className="field-label" id="sheet-label">{t('Sheet size')}</span>
             <div className="chips" role="group" aria-labelledby="sheet-label">
               {SHEETS.map(s => (
                 <button
@@ -176,39 +177,39 @@ export default function UploadView({
                   {s.label} <small>{s.w} × {s.h}</small>
                 </button>
               ))}
-              <button type="button" className="chip" aria-pressed={customSheet} onClick={() => setCustomSheet(true)}>Other</button>
+              <button type="button" className="chip" aria-pressed={customSheet} onClick={() => setCustomSheet(true)}>{t('Other')}</button>
             </div>
             {customSheet && (
               <div className="input-row">
-                <input className="input num" type="number" inputMode="numeric" min={1} aria-label="Sheet length in mm" value={sheet.w || ''} onChange={e => setSheet(s => ({ ...s, w: num(e.target.value) }))} />
+                <input className="input num" type="number" inputMode="numeric" min={1} aria-label={t('Sheet length in mm')} value={sheet.w || ''} onChange={e => setSheet(s => ({ ...s, w: num(e.target.value) }))} />
                 <span className="input-affix">×</span>
-                <input className="input num" type="number" inputMode="numeric" min={1} aria-label="Sheet width in mm" value={sheet.h || ''} onChange={e => setSheet(s => ({ ...s, h: num(e.target.value) }))} />
+                <input className="input num" type="number" inputMode="numeric" min={1} aria-label={t('Sheet width in mm')} value={sheet.h || ''} onChange={e => setSheet(s => ({ ...s, h: num(e.target.value) }))} />
                 <span className="input-affix">mm</span>
               </div>
             )}
           </div>
 
           <div className="field">
-            <span className="field-label" id="thick-label">Main board thickness</span>
+            <span className="field-label" id="thick-label">{t('Main board thickness')}</span>
             <div className="chips" role="group" aria-labelledby="thick-label">
               {THICKNESSES.map(t => (
                 <button key={t} type="button" className="chip" aria-pressed={!customThickness && thickness === t} onClick={() => { setCustomThickness(false); setThickness(t); }}>
                   {t} mm
                 </button>
               ))}
-              <button type="button" className="chip" aria-pressed={customThickness} onClick={() => setCustomThickness(true)}>Other</button>
+              <button type="button" className="chip" aria-pressed={customThickness} onClick={() => setCustomThickness(true)}>{t('Other')}</button>
             </div>
             {customThickness && (
               <div className="input-row">
-                <input className="input num" type="number" inputMode="decimal" min={1} aria-label="Thickness in mm" value={thickness || ''} onChange={e => setThickness(num(e.target.value))} />
+                <input className="input num" type="number" inputMode="decimal" min={1} aria-label={t('Thickness in mm')} value={thickness || ''} onChange={e => setThickness(num(e.target.value))} />
                 <span className="input-affix">mm</span>
               </div>
             )}
-            <span className="field-help">Parts in another thickness, like a 6 mm back, are put on their own sheets automatically.</span>
+            <span className="field-help">{t('Parts in another thickness, like a 6 mm back, are put on their own sheets automatically.')}</span>
           </div>
 
           <div className="field">
-            <label htmlFor="cost">Price of one sheet</label>
+            <label htmlFor="cost">{t('Price of one sheet')}</label>
             <div className="input-row">
               <span className="input-affix">₹</span>
               <input id="cost" className="input num" type="number" inputMode="numeric" min={1} value={sheetCost || ''} onChange={e => setSheetCost(num(e.target.value))} />
@@ -222,12 +223,12 @@ export default function UploadView({
                   type="checkbox"
                   checked={useOffcuts}
                   onChange={e => onUseOffcutsChange(e.target.checked)}
-                  aria-label="Use my offcut shelf"
+                  aria-label={t('Use my offcut shelf')}
                 />
                 <span className="switch-track" aria-hidden="true" />
               </label>
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <strong>Use my offcut shelf</strong>
+                <strong>{t('Use my offcut shelf')}</strong>
                 <span className="small muted">
                   {offcutShelf.count} leftover {offcutShelf.count === 1 ? 'piece' : 'pieces'} ({offcutShelf.totalAreaM2.toFixed(2)} m²) from earlier projects — parts that fit are cut from these first, free.
                 </span>
@@ -236,14 +237,14 @@ export default function UploadView({
           )}
 
           <details className="more">
-            <summary><ChevronRight size={18} /> More settings</summary>
+            <summary><ChevronRight size={18} /> {t('More settings')}</summary>
             <div className="field" style={{ marginTop: 8 }}>
-              <label htmlFor="kerf">Blade thickness (kerf)</label>
+              <label htmlFor="kerf">{t('Blade thickness (kerf)')}</label>
               <div className="input-row">
                 <input id="kerf" className="input num" type="number" inputMode="decimal" min={0.1} step={0.1} value={kerf || ''} onChange={e => setKerf(num(e.target.value))} />
                 <span className="input-affix">mm</span>
               </div>
-              <span className="field-help">The width of wood the blade removes on each cut. Most panel saws are about 3 mm.</span>
+              <span className="field-help">{t('The width of wood the blade removes on each cut. Most panel saws are about 3 mm.')}</span>
             </div>
           </details>
         </section>

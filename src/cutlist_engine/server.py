@@ -77,7 +77,7 @@ MAX_UPLOAD_BYTES = int(float(os.environ.get("CUTLIST_MAX_UPLOAD_MB", "500")) * 1
 MAX_TRIANGLES = int(os.environ.get("CUTLIST_MAX_TRIANGLES", "2000000"))
 SESSION_TTL_SECONDS = int(float(os.environ.get("CUTLIST_SESSION_TTL_HOURS", "168")) * 3600)
 API_TOKEN = os.environ.get("CUTLIST_API_TOKEN", "").strip()
-ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae", ".glb", ".gltf"}
+ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae", ".glb", ".gltf", ".step", ".stp"}
 
 
 @asynccontextmanager

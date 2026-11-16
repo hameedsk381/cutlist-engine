@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t } from '../i18n';
 import ReactMarkdown from 'react-markdown';
 import { LoaderCircle, Send, X } from 'lucide-react';
 import { aiChat, friendlyError } from '../api';
@@ -50,19 +51,19 @@ export default function ChatDrawer({ context, sessionId, onClose }: Props) {
   };
 
   return (
-    <aside className="drawer" role="dialog" aria-label="Ask about this job">
+    <aside className="drawer" role="dialog" aria-label={t('Ask about this job')}>
       <div className="drawer-head">
         <div style={{ flex: 1 }}>
-          <h2>Ask about this job</h2>
-          <div className="small muted">Answers are written by AI. Check before relying on them.</div>
+          <h2>{t('Ask about this job')}</h2>
+          <div className="small muted">{t('Answers are written by AI. Check before relying on them.')}</div>
         </div>
-        <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}><X size={22} /></button>
+        <button type="button" className="icon-btn" aria-label={t('Close')} onClick={onClose}><X size={22} /></button>
       </div>
 
       <div className="drawer-body" aria-live="polite">
         {messages.length === 0 && (
           <>
-            <p className="muted">Ask anything about this cutting plan, the material or how to build it.</p>
+            <p className="muted">{t('Ask anything about this cutting plan, the material or how to build it.')}</p>
             <div className="chips">
               {SUGGESTIONS.map(s => <button key={s} type="button" className="chip" style={{ fontSize: 14 }} onClick={() => send(s)}>{s}</button>)}
             </div>
@@ -78,8 +79,8 @@ export default function ChatDrawer({ context, sessionId, onClose }: Props) {
       </div>
 
       <form className="drawer-foot" onSubmit={e => { e.preventDefault(); send(input); }}>
-        <input ref={inputRef} className="input" placeholder="Type your question" aria-label="Your question" value={input} onChange={e => setInput(e.target.value)} />
-        <button type="submit" className="btn btn-primary" disabled={!input.trim() || sending} aria-label="Send"><Send size={20} /></button>
+        <input ref={inputRef} className="input" placeholder={t('Type your question')} aria-label={t('Your question')} value={input} onChange={e => setInput(e.target.value)} />
+        <button type="submit" className="btn btn-primary" disabled={!input.trim() || sending} aria-label={t('Send')}><Send size={20} /></button>
       </form>
     </aside>
   );

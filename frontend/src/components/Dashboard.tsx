@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { t, tf } from '../i18n';
 import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -77,14 +78,14 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
     return (
       <main className="page page-narrow fade-in">
         <div className="page-head">
-          <h1>This design is not ready to cut</h1>
-          <p className="lead">We stopped before making a plan, because the sizes we read may be wrong. Cutting from it could waste sheets.</p>
+          <h1>{t('This design is not ready to cut')}</h1>
+          <p className="lead">{t('We stopped before making a plan, because the sizes we read may be wrong. Cutting from it could waste sheets.')}</p>
         </div>
         <div className="stack">
           <div className="notice notice-warn">
             <TriangleAlert size={22} />
             <div>
-              <strong>What we found</strong>
+              <strong>{t('What we found')}</strong>
               <ul>{findings.map((s, i) => <li key={i}>{s}</li>)}</ul>
             </div>
           </div>
@@ -92,7 +93,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
             <div className="notice notice-info">
               <Lightbulb size={22} />
               <div>
-                <strong>How to fix it</strong>
+                <strong>{t('How to fix it')}</strong>
                 <ul>{fix.recommendations.map((s, i) => <li key={i}>{s}</li>)}</ul>
               </div>
             </div>
@@ -100,13 +101,13 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
           {error && <div className="notice notice-danger" role="alert"><TriangleAlert size={20} /><div>{error}</div></div>}
           <div className="row">
             {onBackToParts && (
-              <button type="button" className="btn btn-primary btn-lg" onClick={onBackToParts}><ArrowLeft size={20} /> Back to the parts</button>
+              <button type="button" className="btn btn-primary btn-lg" onClick={onBackToParts}><ArrowLeft size={20} /> {t('Back to the parts')}</button>
             )}
             <button
               type="button" className="btn btn-danger"
               onClick={() => window.confirm('Make the plan anyway? Only do this if you have checked every part size yourself.') && onForce()}
             >
-              I have checked the sizes, make the plan anyway
+              {t('I have checked the sizes, make the plan anyway')}
             </button>
           </div>
         </div>
@@ -125,21 +126,21 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
     <main className="page fade-in">
       <div className="page-head row">
         <div style={{ flex: 1, minWidth: 260 }}>
-          <h1>Your cutting plan</h1>
+          <h1>{t('Your cutting plan')}</h1>
           <p className="lead">
-            {totalParts} parts on {summary.sheet_count} {summary.sheet_count === 1 ? 'sheet' : 'sheets'}. Tap a part in the list to find it on the sheet.
+            {tf('{parts} parts on {sheets} sheets. Tap a part in the list to find it on the sheet.', { parts: totalParts, sheets: summary.sheet_count })}
           </p>
         </div>
         <div className="row no-print">
-          {onBackToParts && <button type="button" className="btn" onClick={onBackToParts}><ArrowLeft size={20} /> Change parts</button>}
-          <button type="button" className="btn btn-primary" onClick={() => window.print()}><Printer size={20} /> Print plan</button>
+          {onBackToParts && <button type="button" className="btn" onClick={onBackToParts}><ArrowLeft size={20} /> {t('Change parts')}</button>}
+          <button type="button" className="btn btn-primary" onClick={() => window.print()}><Printer size={20} /> {t('Print plan')}</button>
         </div>
       </div>
 
       <div className="stack">
         {designNotes.length > 0 && (
           <details className="more">
-            <summary><ChevronRight size={18} /> How these sizes were worked out</summary>
+            <summary><ChevronRight size={18} /> {t('How these sizes were worked out')}</summary>
             <div className="notice notice-info" style={{ marginTop: 8 }}>
               <div><ul style={{ marginTop: 0 }}>{designNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
             </div>
@@ -155,9 +156,9 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
           </div>
         )}
 
-        <section className="stats" aria-label="Summary">
+        <section className="stats" aria-label={t('Summary')}>
           <div className="stat">
-            <div className="stat-label">Sheets to buy</div>
+            <div className="stat-label">{t('Sheets to buy')}</div>
             <div className="stat-value num">{summary.sheet_count}</div>
             <div className="stat-sub">
               {offcutSheets.length > 0
@@ -166,26 +167,26 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
             </div>
           </div>
           <div className="stat">
-            <div className="stat-label">Material cost</div>
+            <div className="stat-label">{t('Material cost')}</div>
             <div className="stat-value num">{money(summary.total_material_cost)}</div>
-            <div className="stat-sub">at the sheet price you entered</div>
+            <div className="stat-sub">{t('at the sheet price you entered')}</div>
           </div>
           <div className="stat">
-            <div className="stat-label">Wood used</div>
+            <div className="stat-label">{t('Wood used')}</div>
             <div className="stat-value num">{Math.round(summary.utilization_percent)}%</div>
-            <div className="stat-sub">{Math.round(summary.waste_percent)}% is left over</div>
+            <div className="stat-sub">{tf('{percent}% is left over', { percent: Math.round(summary.waste_percent) })}</div>
           </div>
           <div className="stat">
-            <div className="stat-label">Spare pieces worth keeping</div>
+            <div className="stat-label">{t('Spare pieces worth keeping')}</div>
             <div className="stat-value num">{summary.reusable_offcut_area.toFixed(1)} m²</div>
-            <div className="stat-sub">shown hatched in green</div>
+            <div className="stat-sub">{t('shown hatched in green')}</div>
           </div>
         </section>
 
         <div className="result-grid">
           <div className="stack">
             {sheet && (
-              <section className="card screen-only" aria-label="Sheet layout">
+              <section className="card screen-only" aria-label={t('Sheet layout')}>
                 {sheets.length > 1 && (
                   <div className="sheet-tabs chips" role="tablist" style={{ flexWrap: 'nowrap', marginBottom: 14 }}>
                     {sheets.map((s, i) => (
@@ -201,10 +202,10 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
                 </div>
                 <SheetLayout sheet={sheet} activeIds={activeIds} onSelect={id => selectBoards([id])} names={names} />
                 <div className="sheet-meta">
-                  <span><span className="legend-swatch" style={{ background: 'var(--part)' }} />Part to cut</span>
-                  <span><span className="legend-swatch" style={{ background: 'var(--ok-soft)', borderColor: 'var(--ok)' }} />Spare piece worth keeping</span>
-                  <span><span className="legend-swatch" style={{ background: 'var(--wood)' }} />Waste</span>
-                  <span className="num">{sheet.parts.length} parts · {Math.round(sheet.utilization_percent)}% used</span>
+                  <span><span className="legend-swatch" style={{ background: 'var(--part)' }} />{t('Part to cut')}</span>
+                  <span><span className="legend-swatch" style={{ background: 'var(--ok-soft)', borderColor: 'var(--ok)' }} />{t('Spare piece worth keeping')}</span>
+                  <span><span className="legend-swatch" style={{ background: 'var(--wood)' }} />{t('Waste')}</span>
+                  <span className="num">{tf('{parts} parts · {percent}% used', { parts: sheet.parts.length, percent: Math.round(sheet.utilization_percent) })}</span>
                 </div>
               </section>
             )}
@@ -219,12 +220,12 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
               ))}
             </div>
 
-            <section className="card" aria-label="Parts list">
-              <div className="card-title"><h2>Parts list</h2><span className="tag tag-muted num">{totalParts} parts</span></div>
+            <section className="card" aria-label={t('Parts list')}>
+              <div className="card-title"><h2>{t('Parts list')}</h2><span className="tag tag-muted num">{totalParts} parts</span></div>
               <div className="table-wrap">
                 <table className="cut">
                   <thead>
-                    <tr><th>Qty</th><th>Part</th><th>Length</th><th>Width</th><th>Thick</th></tr>
+                    <tr><th>{t('Qty')}</th><th>{t('Part')}</th><th>{t('Length')}</th><th>{t('Width')}</th><th>{t('Thick')}</th></tr>
                   </thead>
                   <tbody>
                     {result.cutlist.map(item => {
@@ -253,12 +254,12 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
 
           <aside className="stack no-print">
             {tools}
-            <section className="card" aria-label="Downloads">
-              <div className="card-title"><h2>Take it to the workshop</h2></div>
+            <section className="card" aria-label={t('Downloads')}>
+              <div className="card-title"><h2>{t('Take it to the workshop')}</h2></div>
               <div className="dl-list">
                 <button type="button" className="dl" onClick={() => window.print()}>
                   <span className="dl-icon"><Printer size={20} /></span>
-                  <span><strong>Print the cutting plan</strong><span>Every sheet and the parts list</span></span>
+                  <span><strong>{t('Print the cutting plan')}</strong><span>{t('Every sheet and the parts list')}</span></span>
                   <ChevronRight size={20} />
                 </button>
                 {find('labels.html') && (
@@ -268,7 +269,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
                     onClick={() => saveArtifact(find('labels.html')!.url, 'labels.html', true)}
                   >
                     <span className="dl-icon"><Tag size={20} /></span>
-                    <span><strong>Part labels</strong><span>Stick one on each cut part</span></span>
+                    <span><strong>{t('Part labels')}</strong><span>{t('Stick one on each cut part')}</span></span>
                     <ChevronRight size={20} />
                   </button>
                 )}
@@ -279,7 +280,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
                     onClick={() => saveArtifact(find('cutlist.csv')!.url, 'cutlist.csv')}
                   >
                     <span className="dl-icon"><FileText size={20} /></span>
-                    <span><strong>Parts list for Excel</strong><span>CSV file</span></span>
+                    <span><strong>{t('Parts list for Excel')}</strong><span>{t('CSV file')}</span></span>
                     <Download size={20} />
                   </button>
                 )}
@@ -287,19 +288,19 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
 
               {(dxf.length > 0 || gcode.length > 0) && (
                 <details className="more" style={{ marginTop: 12 }}>
-                  <summary><ChevronRight size={18} /> Files for a CNC machine</summary>
+                  <summary><ChevronRight size={18} /> {t('Files for a CNC machine')}</summary>
                   <div className="dl-list" style={{ marginTop: 8 }}>
                     {dxf.map((a, i) => (
                       <button key={a.url} type="button" className="dl" onClick={() => saveArtifact(a.url, a.name)}>
                         <span className="dl-icon"><Cpu size={20} /></span>
-                        <span><strong>Sheet {i + 1} drawing</strong><span>DXF, opens in any CAM software</span></span>
+                        <span><strong>Sheet {i + 1} drawing</strong><span>{t('DXF, opens in any CAM software')}</span></span>
                         <Download size={20} />
                       </button>
                     ))}
                     {gcode.map((a, i) => (
                       <button key={a.url} type="button" className="dl" onClick={() => saveArtifact(a.url, a.name)}>
                         <span className="dl-icon"><Cpu size={20} /></span>
-                        <span><strong>Sheet {i + 1} G-code</strong><span>Test with an air cut before using</span></span>
+                        <span><strong>Sheet {i + 1} G-code</strong><span>{t('Test with an air cut before using')}</span></span>
                         <Download size={20} />
                       </button>
                     ))}
@@ -308,7 +309,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
               )}
               {artifacts.length === 0 && (
                 <p className="small muted" style={{ marginTop: 12 }}>
-                  Labels and machine files are made when you start from a 3D file.
+                  {t('Labels and machine files are made when you start from a 3D file.')}
                 </p>
               )}
             </section>
@@ -316,14 +317,14 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
             {fix && !fix.passes_gate && (
               <div className="notice notice-warn">
                 <TriangleAlert size={22} />
-                <div><strong>Made without passing our checks.</strong> You chose to continue, so measure before you cut.</div>
+                <div><strong>{t('Made without passing our checks.')}</strong> {t('You chose to continue, so measure before you cut.')}</div>
               </div>
             )}
             {fix?.passes_gate && findings.length > 0 && (
               <div className="notice notice-info">
                 <CircleCheck size={22} />
                 <div>
-                  <strong>Good to know</strong>
+                  <strong>{t('Good to know')}</strong>
                   <ul className="small">{findings.map((s, i) => <li key={i}>{s}</li>)}</ul>
                 </div>
               </div>
@@ -331,7 +332,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
 
             {advice && (
               <details className="more card card-flat">
-                <summary><Lightbulb size={18} /> Tips for this job</summary>
+                <summary><Lightbulb size={18} /> {t('Tips for this job')}</summary>
                 <div className="small" style={{ marginTop: 8 }}><ReactMarkdown>{advice}</ReactMarkdown></div>
               </details>
             )}
