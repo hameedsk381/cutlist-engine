@@ -48,7 +48,8 @@ export default function Dashboard({ result, finalized, fromDescription, onBackTo
   const thicknessOf = (sheet: Sheet) => boards[sheet.parts[0]?.board_id]?.thickness;
   const sheetName = (sheet: Sheet) => {
     const t = thicknessOf(sheet);
-    return `Sheet ${sheet.sheet_id}${t ? ` · ${t} mm` : ''}`;
+    const base = `Sheet ${sheet.sheet_id}${t ? ` · ${t} mm` : ''}`;
+    return sheet.is_offcut_stock ? `${base} · offcut` : base;
   };
   const byThickness = useMemo(() => {
     const counts = new Map<number, number>();
@@ -56,6 +57,7 @@ export default function Dashboard({ result, finalized, fromDescription, onBackTo
     return [...counts.entries()].sort((a, b) => b[0] - a[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheets, boards]);
+  const offcutSheets = sheets.filter(s => s.is_offcut_stock);
 
   const selectBoards = (ids: string[]) => {
     setActiveIds(new Set(ids));
@@ -139,12 +141,24 @@ export default function Dashboard({ result, finalized, fromDescription, onBackTo
           </div>
         )}
         {error && <div className="notice notice-danger" role="alert"><TriangleAlert size={20} /><div>{error}</div></div>}
+        {offcutSheets.length > 0 && (
+          <div className="notice notice-info" role="status">
+            <CircleCheck size={20} />
+            <div>
+              <strong>{offcutSheets.length} {offcutSheets.length === 1 ? 'sheet is' : 'sheets are'} cut from your offcut shelf</strong> — those pieces were already in your shop, so they cost nothing. Only {Math.max(0, summary.sheet_count - offcutSheets.length)} fresh {summary.sheet_count - offcutSheets.length === 1 ? 'sheet was' : 'sheets were'} bought.
+            </div>
+          </div>
+        )}
 
         <section className="stats" aria-label="Summary">
           <div className="stat">
             <div className="stat-label">Sheets to buy</div>
             <div className="stat-value num">{summary.sheet_count}</div>
-            <div className="stat-sub">{byThickness.map(([t, n]) => `${n} × ${t} mm`).join(' · ')}</div>
+            <div className="stat-sub">
+              {offcutSheets.length > 0
+                ? `${byThickness.map(([t, n]) => `${n} × ${t} mm`).join(' · ')} · ${offcutSheets.length} from your shelf (free)`
+                : byThickness.map(([t, n]) => `${n} × ${t} mm`).join(' · ')}
+            </div>
           </div>
           <div className="stat">
             <div className="stat-label">Material cost</div>

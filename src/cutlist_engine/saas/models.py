@@ -88,3 +88,30 @@ class ApiKey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="api_keys")
+
+
+class OffcutStock(Base):
+    """A leftover piece saved from a finished project (the shop's offcut shelf).
+
+    Lifecycle: 'available' → 'reserved' (attached to a new project, its dims
+    injected into that job's config) → 'used' (job succeeded) — or back to
+    'available' if the job failed.
+    """
+    __tablename__ = "offcut_stock"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    length: Mapped[float] = mapped_column(default=0.0)
+    width: Mapped[float] = mapped_column(default=0.0)
+    thickness: Mapped[float] = mapped_column(default=18.0)
+    material: Mapped[str] = mapped_column(String(64), default="default")
+    source_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Project whose leftovers produced this piece."""
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    """Project currently reserving/using this piece (None when available)."""
+    status: Mapped[str] = mapped_column(String(16), default="available")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    @property
+    def area_m2(self) -> float:
+        return round(self.length * self.width / 1_000_000.0, 4)

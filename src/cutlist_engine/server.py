@@ -811,6 +811,7 @@ def _sheet_payload(sheet, boards_map: dict[str, Any] | None = None) -> dict[str,
         "utilization_percent": sheet.utilization_percent,
         "parts": parts_payload,
         "offcuts": [asdict(o) for o in sheet.offcuts],
+        "is_offcut_stock": sheet.is_offcut_stock,
     }
 
 

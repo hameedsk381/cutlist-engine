@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft, Check, Clock, Copy, FileText, FolderOpen, KeyRound,
-  LoaderCircle, LogOut, MailWarning, Plus, RotateCcw, Share2, Trash2, TriangleAlert,
+  LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Trash2, TriangleAlert,
 } from 'lucide-react';
 import UploadView from './UploadView';
 import Dashboard from './Dashboard';
 import {
-  artifactDownloadUrl, createApiKey, createProject, friendlyError, getProject,
-  listApiKeys, listProjects, rerunProject, resendVerification, revokeApiKey,
-  shareProject,
+  artifactDownloadUrl, createApiKey, createProject, deleteOffcut, friendlyError, getProject,
+  listApiKeys, listOffcuts, listProjects, rerunProject, resendVerification, revokeApiKey,
+  saveProjectOffcuts, shareProject,
 } from '../api';
 import type {
   FinalizeResult, ProcessConfig, ProcessResult, SaaSApiKey, SaaSApiKeyCreated,
-  SaaSJob, SaaSProject, SaaSUser,
+  SaaSJob, SaaSOffcutList, SaaSProject, SaaSUser,
 } from '../types';
 
 interface Props {
@@ -48,6 +48,19 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   const [keysOpen, setKeysOpen] = useState(false);
   const [apiKeys, setApiKeys] = useState<SaaSApiKey[]>([]);
   const [newKey, setNewKey] = useState<SaaSApiKeyCreated | null>(null);
+
+  // --- M4: offcut shelf -----------------------------------------------------
+  const [shelf, setShelf] = useState<SaaSOffcutList | null>(null);
+  const [useOffcuts, setUseOffcuts] = useState(false);
+
+  const refreshShelf = useCallback(async () => {
+    try {
+      const data = await listOffcuts();
+      setShelf(data);
+    } catch {
+      setShelf(null); // shelf is optional — never block a project over it
+    }
+  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -118,7 +131,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     setError(null);
     void (async () => {
       try {
-        const project = await createProject(file, file.name.replace(/\.[^.]+$/, ''), { ...cfg });
+        const project = await createProject(file, file.name.replace(/\.[^.]+$/, ''), { ...cfg }, useOffcuts);
+        setUseOffcuts(false); // the shelf claim happens on the server for this project only
         setActive({ id: project.id, name: project.name });
         setStage('job');
         startPolling(project.id);
@@ -227,6 +241,38 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     }
   };
 
+  // --- M4: offcut shelf actions --------------------------------------------
+
+  const startNewProject = () => {
+    setError(null);
+    setUseOffcuts(false);
+    setStage('new');
+    void refreshShelf();
+  };
+
+  const handleSaveOffcuts = async (projectId: number) => {
+    setError(null);
+    try {
+      const saved = await saveProjectOffcuts(projectId);
+      setNotice(saved > 0
+        ? `Saved ${saved} leftover ${saved === 1 ? 'piece' : 'pieces'} to your offcut shelf.`
+        : 'No reusable leftovers big enough to save on this one.');
+      await refreshShelf();
+    } catch (err) {
+      setError(friendlyError(err, 'Could not save the offcuts.'));
+    }
+  };
+
+  const handleDeleteOffcut = async (id: number) => {
+    setError(null);
+    try {
+      await deleteOffcut(id);
+      await refreshShelf();
+    } catch (err) {
+      setError(friendlyError(err, 'Could not discard that piece.'));
+    }
+  };
+
   if (stage === 'new') {
     return (
       <main className="page">
@@ -238,6 +284,9 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           onDescribe={() => { /* AI describe is part of the legacy flow for now */ }}
           error={error}
           busy={!!busy}
+          offcutShelf={shelf && shelf.count > 0 ? { count: shelf.count, totalAreaM2: shelf.total_area_m2 } : undefined}
+          useOffcuts={useOffcuts}
+          onUseOffcutsChange={setUseOffcuts}
         />
         {busy && (
           <div className="overlay" role="alertdialog" aria-live="assertive" aria-label={busy}>
@@ -299,7 +348,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
         <button type="button" className="btn btn-ghost" onClick={onSignOut}>
           <LogOut size={18} /> Sign out
         </button>
-        <button type="button" className="btn btn-primary" onClick={() => { setError(null); setStage('new'); }}>
+        <button type="button" className="btn btn-primary" onClick={startNewProject}>
           <Plus size={18} /> New project
         </button>
       </div>
@@ -333,7 +382,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           <h2 style={{ marginTop: 12 }}>No projects yet</h2>
           <p className="muted">Upload a 3D model to get your first cutting plan.</p>
           <button type="button" className="btn btn-primary btn-lg" style={{ marginTop: 16 }}
-                  onClick={() => { setError(null); setStage('new'); }}>
+                  onClick={startNewProject}>
             <Plus size={18} /> New project
           </button>
         </section>
@@ -362,6 +411,9 @@ export default function ProjectsView({ user, onSignOut }: Props) {
                     <button type="button" className="btn" onClick={() => handleShare(p.id)} aria-label="Copy share link">
                       <Share2 size={16} /> Share
                     </button>
+                    <button type="button" className="btn" onClick={() => handleSaveOffcuts(p.id)} aria-label="Save reusable offcuts">
+                      <PackagePlus size={16} /> Save offcuts
+                    </button>
                     <button type="button" className="btn" onClick={() => openDashboard(p.id, p.job)}>
                       Open plan
                     </button>
@@ -379,6 +431,39 @@ export default function ProjectsView({ user, onSignOut }: Props) {
             </section>
           ))}
         </div>
+      )}
+
+      {/* ---- Offcut shelf (M4: leftovers from one plan become the next one's free stock) ---- */}
+      {shelf && shelf.count > 0 && (
+        <section className="card keys-panel">
+          <div className="row">
+            <PackagePlus size={20} style={{ color: 'var(--text-2)' }} />
+            <h2 style={{ margin: 0 }}>Offcut shelf</h2>
+            <span className="muted small">
+              {shelf.count} {shelf.count === 1 ? 'piece' : 'pieces'} · {shelf.total_area_m2.toFixed(2)} m² — reused free when you tick “Use my offcut shelf”
+            </span>
+            <div className="spacer" />
+          </div>
+          <table className="keys-table">
+            <thead>
+              <tr><th>Size</th><th>Thickness</th><th>Area</th><th /></tr>
+            </thead>
+            <tbody>
+              {shelf.offcuts.map((o) => (
+                <tr key={o.id}>
+                  <td>{Math.round(o.length)} × {Math.round(o.width)} mm</td>
+                  <td>{o.thickness} mm</td>
+                  <td>{o.area_m2.toFixed(2)} m²</td>
+                  <td>
+                    <button type="button" className="btn" onClick={() => handleDeleteOffcut(o.id)} aria-label="Discard offcut">
+                      <Trash2 size={16} /> Discard
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
 
       {/* ---- API keys (programmatic access for CNC shops) ---- */}

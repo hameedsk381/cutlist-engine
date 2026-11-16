@@ -51,6 +51,9 @@ class ProcessConfig:
     """Optional material registry. Boards routed to a material are nested on its sheets."""
     review: dict[str, ReviewDecision] = field(default_factory=dict)
     """Operator review decisions keyed by board id."""
+    offcut_stock: tuple[tuple[float, float, str], ...] = ()
+    """Saved offcuts as (width, height, material) mm. Consumed as free sheets
+    before full sheets, for the matching material group."""
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,9 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
 
     for material_name, group in _group_by_material(boards).items():
         spec = material_registry.get(material_name) or material_registry[_DEFAULT_MATERIAL]
+        stock_for_material = tuple(
+            (float(w), float(h)) for w, h, m in config.offcut_stock if m == material_name
+        )
         layout = optimize_cutting_layout(
             group,
             sheet_width=spec.sheet_width,
@@ -145,6 +151,7 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
             material=material_name,
             sheet_cost=spec.sheet_cost,
             currency=spec.currency,
+            offcut_stock=stock_for_material,
         )
         # Renumber so global sheet ids are contiguous across materials.
         renumbered = []
@@ -214,7 +221,9 @@ def summarize_material(
 ) -> MaterialSummary:
     total_board_area_mm2 = sum(b.length * b.width for b in boards)
     sheet_area = sheet_width * sheet_height
-    used_sheet_area = sheet_area * len(sheets)
+    # Actual area across all sheets — offcut-stock sheets are smaller than the
+    # nominal sheet size, so sum the real geometry rather than nominal × count.
+    used_sheet_area = sum(s.width * s.height for s in sheets)
     waste_area = max(0.0, used_sheet_area - total_board_area_mm2)
     reusable_offcut_area_mm2 = sum(
         offcut.area * 1_000_000.0 for sheet in sheets for offcut in sheet.offcuts if offcut.reusable
@@ -224,7 +233,8 @@ def summarize_material(
 
     sheet_savings = waste_report.sheet_savings_vs_worst if waste_report else 0
     cost_savings = round(sheet_savings * sheet_cost, 2)
-    total_cost = round(len(sheets) * sheet_cost, 2)
+    # Sum the real per-sheet cost: offcut-stock sheets are free.
+    total_cost = round(sum(s.sheet_cost for s in sheets), 2)
 
     return MaterialSummary(
         total_board_area=total_board_area_mm2 / 1_000_000.0,

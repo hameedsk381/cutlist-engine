@@ -77,7 +77,9 @@ def render_share_page(project_name: str, original_filename: str, created_at, sum
     )
 
     sheet_cards = "".join(
-        f"<tr><td>Sheet {e(str(s.get('sheet_id', '')))}</td>"
+        f"<tr><td>Sheet {e(str(s.get('sheet_id', '')))}"
+        + (" <em>(your offcut stock)</em>" if s.get("is_offcut_stock") else "")
+        + f"</td>"
         f"<td>{e(_n(s.get('width', '')))} × {e(_n(s.get('height', '')))} mm</td>"
         f"<td>{e(str(len(s.get('parts', []))))}</td>"
         f"<td class='num'>{_n(round(float(s.get('utilization_percent', 0) or 0), 1))}%</td>"

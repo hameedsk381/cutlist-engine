@@ -340,3 +340,134 @@ def test_legacy_shared_token_does_not_block_saas_routes(client, monkeypatch):
 
     # legacy single-operator routes still require the shared token
     assert client.post("/api/extract").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M4: offcut shelf (save leftovers → reuse them in the next project)
+# ---------------------------------------------------------------------------
+
+def test_offcut_save_list_delete(client):
+    data = _signup(client, "shelf@example.com")
+    token = data["token"]
+    created = _create_project(client, token)
+    process_claimed_job(created["project"]["job"]["id"])
+    pid = created["project"]["id"]
+
+    # nothing on the shelf yet
+    r = client.get("/api/offcuts", headers=_auth(token))
+    assert r.json() == {"offcuts": [], "count": 0, "total_area_m2": 0}
+
+    # demo mesh: 5 parts on 1 sheet → reusable offcuts exist
+    r = client.post(f"/api/projects/{pid}/offcuts", headers=_auth(token))
+    assert r.status_code == 201
+    saved = r.json()["saved"]
+    assert saved > 0
+
+    listed = client.get("/api/offcuts", headers=_auth(token)).json()
+    assert listed["count"] == saved
+    assert listed["total_area_m2"] > 0
+    piece = listed["offcuts"][0]
+    assert piece["status"] == "available"
+    assert piece["thickness"] == 18.0
+    assert piece["length"] >= 300 and piece["width"] >= 300  # reusable threshold
+
+    # a stranger cannot see or touch them
+    other = _signup(client, "other-shelf@example.com")
+    assert client.get("/api/offcuts", headers=_auth(other["token"])).json()["count"] == 0
+    assert client.delete(f"/api/offcuts/{piece['id']}", headers=_auth(other["token"])).status_code == 404
+
+    # owner deletes it
+    assert client.delete(f"/api/offcuts/{piece['id']}", headers=_auth(token)).status_code == 200
+    assert client.get("/api/offcuts", headers=_auth(token)).json()["count"] == saved - 1
+
+
+def test_offcut_save_requires_finished_plan(client):
+    data = _signup(client, "nofinish@example.com")
+    token = data["token"]
+    created = _create_project(client, token)  # not processed
+    r = client.post(f"/api/projects/{created['project']['id']}/offcuts", headers=_auth(token))
+    assert r.status_code == 409
+
+
+def test_offcut_used_offcuts_marked_used_after_job(client):
+    from cutlist_engine.saas.models import OffcutStock, Project
+
+    data = _signup(client, "carry2@example.com")
+    token = data["token"]
+
+    first = _create_project(client, token)
+    process_claimed_job(first["project"]["job"]["id"])
+    client.post(f"/api/projects/{first['project']['id']}/offcuts", headers=_auth(token))
+
+    r = client.post(
+        "/api/projects",
+        data={"name": "carry project", "use_offcuts": "true"},
+        files={"file": ("cabinet.json", MESH.encode(), "application/json")},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201
+    project_id = r.json()["project"]["id"]
+
+    # config carries the offcut stock into the engine
+    with saas_db.SessionLocal() as db:
+        project = db.get(Project, project_id)
+        config = json.loads(project.config_json)
+        assert len(config["offcut_stock"]) > 0
+        assert all(len(entry) == 3 for entry in config["offcut_stock"])
+
+    # run the worker: success marks the reserved pieces 'used'
+    process_claimed_job(r.json()["job_id"])
+    with saas_db.SessionLocal() as db:
+        statuses = {
+            o.status for o in db.query(OffcutStock).filter(OffcutStock.project_id == project_id)
+        }
+        assert statuses == {"used"}
+
+    # the plan itself shows an offcut-stock sheet (cost 0)
+    detail = client.get(f"/api/projects/{project_id}", headers=_auth(token)).json()
+    sheets = detail["result"]["sheets"]
+    assert any(s.get("is_offcut_stock") for s in sheets)
+    assert detail["result"]["material_summary"]["total_material_cost"] < 3500
+
+    # the shelf is empty of available pieces
+    listed = client.get("/api/offcuts", headers=_auth(token)).json()
+    assert listed["count"] == 0
+
+
+def test_offcut_released_when_job_fails(client):
+    from cutlist_engine.saas.models import OffcutStock, Project as ProjectModel
+
+    data = _signup(client, "release@example.com")
+    token = data["token"]
+
+    first = _create_project(client, token)
+    process_claimed_job(first["project"]["job"]["id"])
+    client.post(f"/api/projects/{first['project']['id']}/offcuts", headers=_auth(token))
+
+    # new project claims the shelf, then its job fails — pieces go back
+    r = client.post(
+        "/api/projects",
+        data={"name": "fail later", "use_offcuts": "true"},
+        files={"file": ("cabinet.json", MESH.encode(), "application/json")},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201
+    project_id = r.json()["job_id"] and r.json()["project"]["id"]
+
+    with saas_db.SessionLocal() as db:
+        project = db.get(ProjectModel, project_id)
+        model_path = project.model_path
+
+    # corrupt the stored model so the worker fails
+    Path(model_path).write_text("not a model at all")
+    process_claimed_job(r.json()["job_id"])
+
+    with saas_db.SessionLocal() as db:
+        statuses = {
+            o.status for o in db.query(OffcutStock).filter(OffcutStock.user_id == data["user"]["id"])
+        }
+        assert statuses == {"available"}
+
+    # and the shelf shows them again
+    listed = client.get("/api/offcuts", headers=_auth(token)).json()
+    assert listed["count"] > 0

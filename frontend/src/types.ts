@@ -51,6 +51,7 @@ export interface Sheet {
   utilization_percent: number;
   parts: SheetPart[];
   offcuts: Offcut[];
+  is_offcut_stock?: boolean;
 }
 
 export interface MaterialSummary {
@@ -183,4 +184,21 @@ export interface SaaSApiKey {
 
 export interface SaaSApiKeyCreated extends SaaSApiKey {
   key: string; // raw key, shown exactly once
+}
+
+export interface SaaSOffcut {
+  id: number;
+  length: number;
+  width: number;
+  thickness: number;
+  material: string;
+  area_m2: number;
+  status: 'available' | 'reserved' | 'used';
+  created_at: string | null;
+}
+
+export interface SaaSOffcutList {
+  offcuts: SaaSOffcut[];
+  count: number;
+  total_area_m2: number;
 }

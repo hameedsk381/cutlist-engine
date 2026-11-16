@@ -8,6 +8,10 @@ interface Props {
   onDescribe: (description: string, config: ProcessConfig) => void;
   error: string | null;
   busy: boolean;
+  /** M4 offcut shelf — present only in the SaaS flow, when the shelf is non-empty. */
+  offcutShelf?: { count: number; totalAreaM2: number };
+  useOffcuts?: boolean;
+  onUseOffcutsChange?: (value: boolean) => void;
 }
 
 const SHEETS = [
@@ -23,7 +27,10 @@ const EXAMPLES = [
   'Open bookshelf 1800 high, 800 wide, 300 deep, 5 shelves',
 ];
 
-export default function UploadView({ onUploadFile, onDescribe, error, busy }: Props) {
+export default function UploadView({
+  onUploadFile, onDescribe, error, busy,
+  offcutShelf, useOffcuts = false, onUseOffcutsChange,
+}: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<'file' | 'describe'>('file');
   const [file, setFile] = useState<File | null>(null);
@@ -207,6 +214,26 @@ export default function UploadView({ onUploadFile, onDescribe, error, busy }: Pr
               <input id="cost" className="input num" type="number" inputMode="numeric" min={1} value={sheetCost || ''} onChange={e => setSheetCost(num(e.target.value))} />
             </div>
           </div>
+
+          {offcutShelf && offcutShelf.count > 0 && onUseOffcutsChange && (
+            <div className="field" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <label className="switch" style={{ marginTop: 2 }}>
+                <input
+                  type="checkbox"
+                  checked={useOffcuts}
+                  onChange={e => onUseOffcutsChange(e.target.checked)}
+                  aria-label="Use my offcut shelf"
+                />
+                <span className="switch-track" aria-hidden="true" />
+              </label>
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <strong>Use my offcut shelf</strong>
+                <span className="small muted">
+                  {offcutShelf.count} leftover {offcutShelf.count === 1 ? 'piece' : 'pieces'} ({offcutShelf.totalAreaM2.toFixed(2)} m²) from earlier projects — parts that fit are cut from these first, free.
+                </span>
+              </span>
+            </div>
+          )}
 
           <details className="more">
             <summary><ChevronRight size={18} /> More settings</summary>

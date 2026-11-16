@@ -190,6 +190,8 @@ class SheetLayout:
     material: str = "default"
     sheet_cost: float = 0.0
     currency: str = "USD"
+    is_offcut_stock: bool = False
+    """True when this sheet is a saved offcut from the shop's shelf (free stock)."""
 
     @property
     def waste_percent(self) -> float:

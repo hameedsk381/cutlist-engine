@@ -23,7 +23,7 @@ from ..parsers import load_model
 from ..pipeline import ProcessConfig, process_triangles
 from . import queue
 from .db import SessionLocal
-from .models import Job, Project
+from .models import Job, OffcutStock, Project
 from .serialize import serialize_result
 from .storage import reset_artifacts
 
@@ -99,6 +99,21 @@ def run_job(project: Project) -> dict:
     }
 
 
+def _settle_offcuts(db, project_id: int, success: bool) -> None:
+    """M4: reserved offcuts become 'used' when the job succeeds, and go back
+    to the shelf when it fails."""
+    status = "used" if success else "available"
+    db.query(OffcutStock).filter(
+        OffcutStock.project_id == project_id,
+        OffcutStock.status == "reserved",
+    ).update({OffcutStock.status: status}, synchronize_session=False)
+    if not success:
+        db.query(OffcutStock).filter(
+            OffcutStock.project_id == project_id,
+        ).update({OffcutStock.project_id: None}, synchronize_session=False)
+    db.commit()
+
+
 def process_claimed_job(job_id: int) -> None:
     with SessionLocal() as db:
         job = db.get(Job, job_id)
@@ -110,12 +125,14 @@ def process_claimed_job(job_id: int) -> None:
         except Exception as exc:  # noqa: BLE001 — any engine failure fails the job
             logger.exception("job %s failed", job_id)
             queue.fail_job(job_id, f"{type(exc).__name__}: {exc}")
+            _settle_offcuts(db, project.id, success=False)
             return
         queue.finish_job(
             job_id,
             result_json=json.dumps(payload["summary"]),
             artifacts_json=json.dumps({"gated": payload["gated"], "artifacts": payload["artifacts"]}),
         )
+        _settle_offcuts(db, project.id, success=True)
         logger.info("job %s done (%d artifacts)", job_id, len(payload["artifacts"]))
 
 

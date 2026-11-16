@@ -48,7 +48,15 @@ def optimize_cutting_layout(
     material: str = "default",
     sheet_cost: float = 0.0,
     currency: str = "USD",
+    offcut_stock: tuple[tuple[float, float], ...] = (),
 ) -> OptimizedLayout:
+    """Nest boards, consuming saved offcut stock before full sheets.
+
+    `offcut_stock` entries are (width, height) mm of leftover pieces already in
+    the shop. They are treated as free sheets: the packer tries them first and
+    picks the piece that places the most board area. Boards that land on an
+    offcut carry `is_offcut_stock=True` and cost nothing.
+    """
     strategies = _ordering_strategies()
     candidates = []
 
@@ -63,6 +71,7 @@ def optimize_cutting_layout(
             material=material,
             sheet_cost=sheet_cost,
             currency=currency,
+            offcut_stock=offcut_stock,
         )
         candidates.append((strategy, sheets))
 
@@ -109,40 +118,24 @@ def _pack_boards(
     material: str = "default",
     sheet_cost: float = 0.0,
     currency: str = "USD",
+    offcut_stock: tuple[tuple[float, float], ...] = (),
 ) -> list[SheetLayout]:
     remaining = ordered_boards
     sheets: list[SheetLayout] = []
+    # Largest offcuts first — they place the most board area.
+    stock = sorted(offcut_stock, key=lambda wh: wh[0] * wh[1], reverse=True)
 
     while remaining:
-        free_rects = [_FreeRect(0.0, 0.0, sheet_width, sheet_height)]
-        parts: list[NestedPart] = []
-        used_area = 0.0
-        not_placed: list[Board] = []
-
-        for board in remaining:
-            placement = _place_with_maxrects(board, free_rects, kerf)
-            if placement is None:
-                not_placed.append(board)
-                continue
-
-            x, y, rotation, length, width = placement
-            parts.append(
-                NestedPart(
-                    board_id=board.id,
-                    x=x,
-                    y=y,
-                    rotation=rotation,
-                    length=length,
-                    width=width,
-                )
+        parts, used_area, not_placed, free_rects, sheet_w, sheet_h, on_stock = (
+            _pack_next_sheet(
+                remaining, stock, sheet_width, sheet_height, kerf,
             )
-            used_area += board.length * board.width
-
+        )
         if not parts:
             oversized = not_placed[0]
             raise ValueError(
                 f"{oversized.id} ({oversized.length:.1f}x{oversized.width:.1f}) does not fit "
-                f"sheet {sheet_width:.1f}x{sheet_height:.1f}"
+                f"sheet {sheet_w:.1f}x{sheet_h:.1f}"
             )
 
         # Cut sequence: top-to-bottom (y), then left-to-right (x) — matches a
@@ -151,19 +144,88 @@ def _pack_boards(
         sheets.append(
             SheetLayout(
                 sheet_id=len(sheets) + 1,
-                width=sheet_width,
-                height=sheet_height,
+                width=sheet_w,
+                height=sheet_h,
                 parts=ordered_parts,
                 used_area=used_area,
                 offcuts=_build_offcuts(free_rects, min_reusable_offcut_width, min_reusable_offcut_height),
                 material=material,
-                sheet_cost=sheet_cost,
+                sheet_cost=0.0 if on_stock else sheet_cost,
                 currency=currency,
+                is_offcut_stock=on_stock,
             )
         )
         remaining = not_placed
 
     return sheets
+
+
+def _pack_next_sheet(
+    remaining: list[Board],
+    stock: list[tuple[float, float]],
+    sheet_width: float,
+    sheet_height: float,
+    kerf: float,
+) -> tuple[list[NestedPart], float, list[Board], list[_FreeRect], float, float, bool]:
+    """Pack one sheet. Returns (parts, used_area, not_placed, free_rects,
+    sheet_w, sheet_h, on_stock). Consumes the chosen stock piece.
+
+    Saved offcuts are tried first — they are free. The piece that places the
+    most board area wins; if none fits anything, they can never help (boards
+    only shrink) and are dropped.
+    """
+    if stock:
+        best = None  # (used_area, index, ...)
+        for index, (w, h) in enumerate(stock):
+            parts, used_area, not_placed, free_rects = _attempt_pack(
+                remaining, w, h, kerf,
+            )
+            if parts and (best is None or used_area > best[0]):
+                best = (used_area, index, parts, used_area, not_placed, free_rects, w, h)
+        if best is not None:
+            _, index, parts, used_area, not_placed, free_rects, w, h = best
+            stock.pop(index)
+            return parts, used_area, not_placed, free_rects, w, h, True
+        stock.clear()  # no offcut fits any remaining board — drop them all
+
+    parts, used_area, not_placed, free_rects = _attempt_pack(
+        remaining, sheet_width, sheet_height, kerf,
+    )
+    return parts, used_area, not_placed, free_rects, sheet_width, sheet_height, False
+
+
+def _attempt_pack(
+    boards: list[Board],
+    sheet_width: float,
+    sheet_height: float,
+    kerf: float,
+) -> tuple[list[NestedPart], float, list[Board], list[_FreeRect]]:
+    """Try to place boards on a single sheet. Nothing is mutated outside."""
+    free_rects = [_FreeRect(0.0, 0.0, sheet_width, sheet_height)]
+    parts: list[NestedPart] = []
+    used_area = 0.0
+    not_placed: list[Board] = []
+
+    for board in boards:
+        placement = _place_with_maxrects(board, free_rects, kerf)
+        if placement is None:
+            not_placed.append(board)
+            continue
+
+        x, y, rotation, length, width = placement
+        parts.append(
+            NestedPart(
+                board_id=board.id,
+                x=x,
+                y=y,
+                rotation=rotation,
+                length=length,
+                width=width,
+            )
+        )
+        used_area += board.length * board.width
+
+    return parts, used_area, not_placed, free_rects
 
 
 def _place_with_maxrects(

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from ..parsers import load_model
 from ..pipeline import ProcessConfig
 from . import emailer
-from .models import ApiKey, Job, Project, User
+from .models import ApiKey, Job, OffcutStock, Project, User
 from .queue import enqueue
 from .security import (
     create_access_token,
@@ -226,6 +226,85 @@ def _latest_done_job(project: Project, db: Session) -> Job | None:
 
 
 # ---------------------------------------------------------------------------
+# Offcut shelf (M4: carry leftovers from one project into the next)
+# ---------------------------------------------------------------------------
+
+@router.post("/api/projects/{project_id}/offcuts", status_code=201)
+def save_project_offcuts(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Save the reusable offcuts of a finished plan to the user's shelf."""
+    project = _owned_project(project_id, user, db)
+    job = _latest_done_job(project, db)
+    if job is None or not job.result_json:
+        raise HTTPException(409, "Finish a plan first — there are no offcuts to save yet")
+
+    summary = json.loads(job.result_json)
+    config = json.loads(project.config_json or "{}")
+    thickness = config.get("material_thickness") or 18.0
+
+    created = 0
+    for sheet in summary.get("sheets", []):
+        material = sheet.get("material", "default") or "default"
+        for oc in sheet.get("offcuts", []):
+            if not oc.get("reusable"):
+                continue
+            db.add(OffcutStock(
+                user_id=user.id,
+                length=oc["width"],
+                width=oc["height"],
+                thickness=thickness,
+                material=material,
+                source_project_id=project.id,
+            ))
+            created += 1
+    db.commit()
+    return {"saved": created}
+
+
+def _offcut_payload(piece: OffcutStock) -> dict:
+    return {
+        "id": piece.id,
+        "length": piece.length,
+        "width": piece.width,
+        "thickness": piece.thickness,
+        "material": piece.material,
+        "area_m2": piece.area_m2,
+        "status": piece.status,
+        "created_at": piece.created_at.isoformat() if piece.created_at else None,
+    }
+
+
+@router.get("/api/offcuts")
+def list_offcuts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    pieces = (
+        db.query(OffcutStock)
+        .filter(OffcutStock.user_id == user.id, OffcutStock.status == "available")
+        .order_by((OffcutStock.length * OffcutStock.width).desc())
+        .all()
+    )
+    return {
+        "offcuts": [_offcut_payload(p) for p in pieces],
+        "count": len(pieces),
+        "total_area_m2": round(sum(p.area_m2 for p in pieces), 4),
+    }
+
+
+@router.delete("/api/offcuts/{offcut_id}")
+def delete_offcut(offcut_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    piece = db.get(OffcutStock, offcut_id)
+    if piece is None or piece.user_id != user.id:
+        raise HTTPException(404, "Offcut not found")
+    if piece.status != "available":
+        raise HTTPException(409, "This offcut is reserved for a project — it can no longer be deleted")
+    db.delete(piece)
+    db.commit()
+    return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
 # Projects
 # ---------------------------------------------------------------------------
 
@@ -300,6 +379,7 @@ async def create_project(
     min_confidence: float = Form(0.6),
     sheet_cost: float = Form(3500.0),
     currency: str = Form("INR"),
+    use_offcuts: bool = Form(False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -368,6 +448,32 @@ async def create_project(
     )
     db.add(project)
     db.flush()  # assigns project.id so storage paths can be built
+
+    # M4: reserve saved offcuts (matched by thickness, biggest first). Their
+    # dimensions go into the job's config so the worker nests parts onto them
+    # before cutting fresh sheets.
+    if use_offcuts:
+        candidates = (
+            db.query(OffcutStock)
+            .filter(
+                OffcutStock.user_id == user.id,
+                OffcutStock.status == "available",
+                OffcutStock.thickness == thickness,
+            )
+            .order_by((OffcutStock.length * OffcutStock.width).desc())
+            .all()
+        )
+        if candidates:
+            for piece in candidates:
+                piece.status = "reserved"
+                piece.project_id = project.id
+            config = json.loads(project.config_json)
+            config["offcut_stock"] = [
+                [piece.length, piece.width, piece.material] for piece in candidates
+            ]
+            project.config_json = json.dumps(config)
+        db.flush()
+
     model_path = save_model(project.id, filename, content)
     project.model_path = str(model_path)
     db.commit()

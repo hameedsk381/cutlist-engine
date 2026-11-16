@@ -45,6 +45,51 @@ def test_nesting_places_multiple_parts_on_sheet():
     assert sheets[0].waste_percent < 100
 
 
+def test_offcut_stock_consumed_before_full_sheets():
+    """A leftover piece is used as a free sheet when it fits a part."""
+    from cutlist_engine.nesting import optimize_cutting_layout
+
+    boards = [
+        Board_factory(600, 400, i) for i in range(3)
+    ]
+
+    # Without stock: 3 parts of 600x400 on 1000x1000 sheets → 2 sheets.
+    plain = optimize_cutting_layout(
+        boards, sheet_width=1000, sheet_height=1000, kerf=3, sheet_cost=3500,
+    )
+    assert len(plain.sheets) == 2
+    assert plain.sheets[0].sheet_cost == 3500  # no offcut sheets anywhere
+
+    # With one 700x450 offcut: it swallows the first part; remaining 2 parts
+    # fit one full sheet → 2 sheets total but cost of only ONE full sheet.
+    with_stock = optimize_cutting_layout(
+        boards, sheet_width=1000, sheet_height=1000, kerf=3, sheet_cost=3500,
+        offcut_stock=((700, 450),),
+    )
+    assert len(with_stock.sheets) == 2
+    offcut_sheets = [s for s in with_stock.sheets if s.is_offcut_stock]
+    assert len(offcut_sheets) == 1
+    assert offcut_sheets[0].width == 700 and offcut_sheets[0].height == 450
+    assert offcut_sheets[0].sheet_cost == 0.0
+    full = [s for s in with_stock.sheets if not s.is_offcut_stock]
+    assert len(full) == 1 and full[0].sheet_cost > 0
+
+
+def Board_factory(length, width, index):
+    """Minimal rectangular Board for nesting tests (id must be unique)."""
+    from cutlist_engine.models import Board  # local import to keep top clean
+
+    return Board(
+        id=f"b{index}",
+        length=length,
+        width=width,
+        thickness=18,
+        area=length * width,
+        contour=(),
+        source_planes=("test", "test"),
+    )
+
+
 def test_pipeline_returns_cutlist_and_layouts():
     result = process_triangles(rectangular_board(720, 450, 18), ProcessConfig())
 

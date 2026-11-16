@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type {
   ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions,
-  SaaSApiKey, SaaSApiKeyCreated, SaaSProject, SaaSProjectDetail, SaaSUser,
+  SaaSApiKey, SaaSApiKeyCreated, SaaSOffcutList, SaaSProject, SaaSProjectDetail, SaaSUser,
 } from './types';
 
 /**
@@ -176,11 +176,14 @@ export async function saasMe(): Promise<SaaSUser> {
   return r.data as SaaSUser;
 }
 
-export async function createProject(file: File, name: string, config: Record<string, unknown>): Promise<SaaSProject> {
+export async function createProject(
+  file: File, name: string, config: Record<string, unknown>, useOffcuts = false,
+): Promise<SaaSProject> {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('name', name);
   Object.entries(config).forEach(([k, v]) => fd.append(k, String(v)));
+  if (useOffcuts) fd.append('use_offcuts', 'true');
   const r = await api.post('/api/projects', fd);
   return r.data.project as SaaSProject;
 }
@@ -233,4 +236,22 @@ export async function shareProject(id: number): Promise<{ share_url: string; has
 
 export async function unshareProject(id: number): Promise<void> {
   await api.delete(`/api/projects/${id}/share`);
+}
+
+// ---------------------------------------------------------------------------
+// SaaS M4: offcut shelf
+// ---------------------------------------------------------------------------
+
+export async function listOffcuts(): Promise<SaaSOffcutList> {
+  const r = await api.get('/api/offcuts');
+  return r.data as SaaSOffcutList;
+}
+
+export async function deleteOffcut(id: number): Promise<void> {
+  await api.delete(`/api/offcuts/${id}`);
+}
+
+export async function saveProjectOffcuts(id: number): Promise<number> {
+  const r = await api.post(`/api/projects/${id}/offcuts`);
+  return r.data.saved as number;
 }
