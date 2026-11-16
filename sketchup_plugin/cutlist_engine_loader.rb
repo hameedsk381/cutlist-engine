@@ -4,13 +4,14 @@
 #   Windows: %AppData%/SketchUp/SketchUp 2024/SketchUp/Plugins/
 #   macOS:   ~/Library/Application Support/SketchUp 2024/SketchUp/Plugins/
 #
-# It adds a "Cutlist Engine" menu under Extensions with two actions:
-#   1. Export selection (or model) to OBJ
-#   2. Export and run cutlist-engine CLI on it
+# It adds a "Cutlist Engine" menu under Extensions:
+#   - Check and send to CutList: reads each board's real size from SketchUp,
+#     shows what it found and what to fix, then sends it to a CutList server.
+#   - Send to CutList (as a mesh): uploads an OBJ of the model instead.
+#   - Export to OBJ / run the cutlist-engine CLI offline.
 #
-# The plugin does NOT call any external service. It writes a local OBJ next to
-# the .skp file and either stops there or shells out to the cutlist-engine CLI
-# you installed via `pip install -e .`.
+# Only the check and send actions call a server, and only the one you set under
+# "CutList connection...". The export actions stay on this computer.
 
 require 'sketchup.rb'
 require 'extensions.rb'
@@ -21,7 +22,7 @@ require 'tmpdir'
 
 module CutlistEngine
   PLUGIN_NAME    = 'Cutlist Engine'.freeze
-  PLUGIN_VERSION = '1.1.0'.freeze
+  PLUGIN_VERSION = '1.2.0'.freeze
   PREFS          = 'CutlistEngine'.freeze
 
   module_function
@@ -178,6 +179,172 @@ module CutlistEngine
   end
 
   # ---------------------------------------------------------------------------
+  # Direct reader: sizes come from SketchUp itself, not from an exported mesh
+  # ---------------------------------------------------------------------------
+  #
+  # Each group or component that has faces of its own becomes one "part". Its
+  # size is the box of those faces in the part's OWN axes (so a rotated board
+  # still reads length x width x thickness), scaled by the accumulated
+  # transformation and converted from inches to millimetres. The server judges
+  # the parts; this code only measures and sends.
+
+  MM_PER_INCH = 25.4
+
+  def instance?(entity)
+    entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
+  end
+
+  def instance_definition(entity)
+    return entity.definition if entity.respond_to?(:definition)
+    entity.entities.parent
+  end
+
+  def hidden?(entity)
+    return true if entity.respond_to?(:visible?) && !entity.visible?
+    layer = entity.respond_to?(:layer) ? entity.layer : nil
+    !layer.nil? && layer.respond_to?(:visible?) && !layer.visible?
+  end
+
+  # Returns [[a, b, c] in mm, fill] for the faces, or nil when they have no volume.
+  # fill is how much of the part's box its two broad faces cover: 1.0 for a plain
+  # rectangular board, less for notches, holes or curves.
+  def measure_faces(faces, transform)
+    box = Geom::BoundingBox.new
+    faces.each { |face| box.add(face.bounds) }
+    extents = [box.width, box.height, box.depth]
+    scales = [transform.xscale.abs, transform.yscale.abs, transform.zscale.abs]
+    dims = extents.each_with_index.map { |extent, i| extent * scales[i] * MM_PER_INCH }
+    return nil if dims.count { |d| d <= 0.0 } > 1 # a line or a point, not a surface
+
+    thin = extents.each_with_index.min_by { |extent, _| extent }[1]
+    axis = [Geom::Vector3d.new(1, 0, 0), Geom::Vector3d.new(0, 1, 0), Geom::Vector3d.new(0, 0, 1)][thin]
+    broad = faces.select { |face| face.normal.parallel?(axis) }.map(&:area).sort.reverse.first(2)
+    plane = extents.each_with_index.reject { |_, i| i == thin }.map { |extent, _| extent }.inject(:*)
+    fill = nil
+    if !broad.empty? && plane && plane > 0.0
+      fill = [(broad.inject(:+) / broad.length) / plane, 1.0].min.round(3)
+    end
+    [dims.map { |d| d.round(3) }, fill]
+  end
+
+  def material_name(entity, faces)
+    material = entity.material
+    material ||= faces.map(&:material).compact.first
+    material ? material.display_name.to_s : ''
+  end
+
+  def collect_parts(entities, transform, path, parent_hidden, sink)
+    entities.each do |entity|
+      next unless instance?(entity)
+      world = transform * entity.transformation
+      definition = instance_definition(entity)
+      name = entity.respond_to?(:name) ? entity.name.to_s.strip : ''
+      hidden = parent_hidden || hidden?(entity)
+      here = path + [name.empty? ? definition.name.to_s : name]
+      children = definition.entities
+      faces = children.grep(Sketchup::Face)
+      unless faces.empty?
+        measured = measure_faces(faces, world)
+        if measured
+          layer = entity.respond_to?(:layer) ? entity.layer : nil
+          sink << {
+            name: name,
+            definition: definition.name.to_s,
+            path: here.join(' > '),
+            tag: layer ? layer.name.to_s : '',
+            material: material_name(entity, faces),
+            dims: measured[0],
+            fill: measured[1],
+            hidden: hidden
+          }
+        end
+      end
+      collect_parts(children, world, here, hidden, sink)
+    end
+  end
+
+  # The selection if there is one, otherwise the whole model.
+  def read_parts
+    model = Sketchup.active_model
+    source = model.selection.empty? ? model.entities : model.selection
+    parts = []
+    collect_parts(source, Geom::Transformation.new, [], false, parts)
+    parts
+  end
+
+  def model_name
+    title = Sketchup.active_model.title.to_s
+    title.empty? ? 'SketchUp model' : title
+  end
+
+  # POST a JSON body with the API key. Returns [status_code, parsed_body_hash].
+  def post_json(path, body)
+    uri = URI.parse("#{server_url}#{path}")
+    request = Net::HTTP::Post.new(uri)
+    request['Authorization'] = "Bearer #{api_key}"
+    request['Content-Type'] = 'application/json'
+    request.body = JSON.generate(body)
+    response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https',
+                                                   open_timeout: 15, read_timeout: 120) do |http|
+      http.request(request)
+    end
+    parsed = begin
+      JSON.parse(response.body.to_s)
+    rescue JSON::ParserError
+      {}
+    end
+    [response.code.to_i, parsed]
+  rescue StandardError => e
+    [0, { 'detail' => "Could not reach #{server_url} (#{e.class}: #{e.message})." }]
+  end
+
+  def explain_failure(status, body)
+    return 'The API key was not accepted. Check it under CutList connection.' if status == 401
+    body['detail'].is_a?(String) ? body['detail'] : "The server answered #{status}."
+  end
+
+  def send_parts(payload)
+    status, body = post_json('/api/projects/skp', payload.merge(name: model_name))
+    if status == 201
+      UI.messagebox("Sent \"#{model_name}\" to CutList. Your browser will open so you can see the plan.")
+      UI.openURL(server_url)
+    else
+      UI.messagebox("Could not send to CutList.\n\n#{explain_failure(status, body)}")
+    end
+  end
+
+  # Read the model, let the server judge it, show the result, then send on request.
+  def menu_action_check_and_send
+    return unless (!server_url.empty? && !api_key.empty?) || menu_action_settings
+
+    parts = read_parts
+    if parts.empty?
+      UI.messagebox("No groups or components were found.\n\nSelect the furniture, or make each board " \
+                    "its own group or component, then try again.")
+      return
+    end
+    payload = { model: model_name, version: 1, parts: parts }
+    status, body = post_json('/api/tools/skp/check', payload.merge(interactive: true))
+    unless status == 200 && body['html'].is_a?(String)
+      UI.messagebox("Could not check the model.\n\n#{explain_failure(status, body)}")
+      return
+    end
+
+    @check_dialog.close if @check_dialog
+    @check_dialog = UI::HtmlDialog.new(
+      dialog_title: 'CutList check', width: 780, height: 680, resizable: true,
+      style: UI::HtmlDialog::STYLE_DIALOG
+    )
+    @check_dialog.add_action_callback('send_to_cutlist') do |_context|
+      @check_dialog.close
+      send_parts(payload)
+    end
+    @check_dialog.add_action_callback('close_dialog') { |_context| @check_dialog.close }
+    @check_dialog.set_html(body['html'])
+    @check_dialog.show
+  end
+
+  # ---------------------------------------------------------------------------
   # UI wiring
   # ---------------------------------------------------------------------------
 
@@ -201,7 +368,8 @@ module CutlistEngine
 
   unless file_loaded?(__FILE__)
     menu = UI.menu('Extensions').add_submenu(PLUGIN_NAME)
-    menu.add_item('Send to CutList')                      { menu_action_send }
+    menu.add_item('Check and send to CutList')            { menu_action_check_and_send }
+    menu.add_item('Send to CutList (as a mesh)')          { menu_action_send }
     menu.add_item('CutList connection...')                { menu_action_settings }
     menu.add_separator
     menu.add_item('Export selection to OBJ for cutlist') { menu_action_export }

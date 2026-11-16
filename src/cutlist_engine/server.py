@@ -61,6 +61,7 @@ from .models import ReviewDecision
 from .saas.db import init_db
 from .saas.routes import router as saas_router
 from .saas.ai_routes import router as saas_ai_router
+from .saas.skp_routes import router as saas_skp_router
 from .outputs import (
     write_cutlist_csv,
     write_json_report,
@@ -106,6 +107,7 @@ app.add_middleware(
 # SaaS control plane: /auth/*, /api/projects, /api/projects/{id}/*
 app.include_router(saas_router)
 app.include_router(saas_ai_router)
+app.include_router(saas_skp_router)
 
 FRONTEND_DIR = Path(
     os.environ.get(

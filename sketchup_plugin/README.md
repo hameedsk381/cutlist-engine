@@ -12,13 +12,48 @@ Copy `cutlist_engine_loader.rb` into your SketchUp Plugins folder:
 
 Restart SketchUp. A new menu appears under **Extensions -> Cutlist Engine**.
 
-## Send straight to CutList (recommended)
+## Check and send to CutList (recommended)
+
+This reads each board's size **from SketchUp itself** (its own length, width
+and thickness, in the board's own axes) instead of rebuilding boards from an
+exported mesh, so rotated parts, units and closed-solid problems do not matter.
+
+1. In the CutList web app, open **API keys** and create a key.
+2. In SketchUp, run **Extensions -> Cutlist Engine -> CutList connection...**
+   and enter your server address and the API key.
+3. Select the furniture (or select nothing to read the whole model) and run
+   **Extensions -> Cutlist Engine -> Check and send to CutList**.
+4. A window lists the boards found, the parts left out and why, and what to fix
+   in the model: unnamed components, flat surfaces, odd thicknesses, material
+   names that disagree with the drawing, shaped boards. Fix them and run the
+   check again, or press **Send to CutList** to make the project.
+
+How parts are read:
+
+- Every group or component with faces of its own is one part. Parts inside it
+  are read separately, so a handle inside a door does not change the door.
+- A part is a board when its smallest size is between 2 and 60 mm and it is at
+  least 50 mm across. Names or tags with words like handle, hinge, leg, glass,
+  mirror or hardware are left out.
+- Name components in **Entity Info** (for example "Left side"). Unnamed parts
+  are labelled by size.
+- Hidden parts and parts on hidden tags are skipped.
+- A shaped or notched board is planned as its full rectangle. The real shape
+  is not kept.
+
+**Status: untested in SketchUp.** The server half (judging the parts, the check
+page, making the project) is covered by tests. The Ruby that measures the model
+and opens the window has not been run: there is no SketchUp or Ruby on the
+machine it was written on. Try it on a small model first, and tell us what the
+check window says; the parts it sends are the only thing the server sees.
+
+## Send as a mesh (older path)
 
 1. In the CutList web app, open **API keys** and create a key.
 2. In SketchUp, run **Extensions -> Cutlist Engine -> CutList connection...**
    and enter your server address (for example `https://cutlist.example.com`, or
    `http://localhost:8000` when self-hosting) and the API key.
-3. Run **Extensions -> Cutlist Engine -> Send to CutList**. The selection (or
+3. Run **Extensions -> Cutlist Engine -> Send to CutList (as a mesh)**. The selection (or
    the whole model if nothing is selected) is uploaded as a new project and
    your browser opens on the project list.
 
