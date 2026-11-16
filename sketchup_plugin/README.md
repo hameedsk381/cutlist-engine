@@ -1,5 +1,7 @@
 # Cutlist Engine - SketchUp plugin
 
+Full user guide: [docs/SKETCHUP_GUIDE.md](../docs/SKETCHUP_GUIDE.md).
+
 A minimal Ruby plugin that exports the active model (or selection) to a clean
 OBJ file and optionally runs the `cutlist-engine` CLI on it.
 

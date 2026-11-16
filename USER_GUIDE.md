@@ -28,6 +28,10 @@ Use millimeter-scale geometry.
 
 The engine reads geometry, not design intent. The cleaner the model, the cleaner the output.
 
+**Using SketchUp?** Read [docs/SKETCHUP_GUIDE.md](docs/SKETCHUP_GUIDE.md): how to model
+boards so they can be cut, the SketchUp extension's check screen and every message it
+shows, exporting by file, and troubleshooting.
+
 ## 3. Model Preparation Checklist
 
 Before export:

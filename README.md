@@ -203,6 +203,7 @@ LibreCAD, VCarve, Aspire, EnRoute and any CAM nesting tool:
 - `GRAIN` - directional arrow on grain-locked parts
 
 ### SketchUp plugin
+User guide for SketchUp users: [docs/SKETCHUP_GUIDE.md](docs/SKETCHUP_GUIDE.md).
 `sketchup_plugin/cutlist_engine_loader.rb` adds an Extensions menu. **Check and
 send to CutList** reads each board's size directly from SketchUp (no mesh
 export), shows what it found and what to fix in the model, then sends it:
