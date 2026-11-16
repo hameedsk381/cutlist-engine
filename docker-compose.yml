@@ -1,0 +1,34 @@
+services:
+  cutlist-engine:
+    build: .
+    image: cutlist-engine:latest
+    container_name: cutlist-engine
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Security — set CUTLIST_API_TOKEN to require Bearer auth on /api/*
+      CUTLIST_API_TOKEN: ${CUTLIST_API_TOKEN:-}
+      # AI features (optional)
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # Production limits
+      CUTLIST_MAX_UPLOAD_MB: ${CUTLIST_MAX_UPLOAD_MB:-100}
+      CUTLIST_MAX_TRIANGLES: ${CUTLIST_MAX_TRIANGLES:-500000}
+      CUTLIST_SESSION_TTL_HOURS: ${CUTLIST_SESSION_TTL_HOURS:-168}
+      # Sessions persist here across restarts
+      CUTLIST_SESSION_DIR: /data/sessions
+      # Keep at 1 (sessions + locks live in-process)
+      CUTLIST_WORKERS: ${CUTLIST_WORKERS:-1}
+    volumes:
+      - cutlist-sessions:/data/sessions
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    # Guard against runaway geometry processing
+    mem_limit: 2g
+
+volumes:
+  cutlist-sessions:

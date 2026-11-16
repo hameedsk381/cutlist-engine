@@ -82,12 +82,23 @@ export interface ExtractionReport {
   unmatched_surface_count: number;
   confidence: number;
   warnings: string[];
+  solid_part_count?: number;
+  inferred_board_count?: number;
+  skipped_parts?: string[];
+}
+
+export interface ModelFixReport {
+  confidence: number;
+  confidence_threshold: number;
+  passes_gate: boolean;
+  issues: string[];
+  recommendations: string[];
 }
 
 export interface ExtractResult {
   session_id: string;
   extraction_report: ExtractionReport;
-  model_fix_report: any;
+  model_fix_report: ModelFixReport | null;
   boards: Board[];
 }
 
@@ -104,9 +115,9 @@ export interface ProcessResult {
   ai_advice: string | null;
   material_summary: MaterialSummary;
   extraction_report?: ExtractionReport;
-  waste_optimization_report?: any;
-  model_fix_report?: any;
-  sheet_size_options?: any[];
+  waste_optimization_report?: unknown;
+  model_fix_report?: ModelFixReport | null;
+  sheet_size_options?: unknown[];
   rejected_boards?: string[];
 }
 

@@ -92,7 +92,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend" / "dist"
+FRONTEND_DIR = Path(
+    os.environ.get(
+        "CUTLIST_FRONTEND_DIR",
+        str(Path(__file__).parent.parent.parent / "frontend" / "dist"),
+    )
+)
 
 # In-memory session cache backed by per-session metadata on disk.
 _SESSIONS: dict[str, dict[str, Any]] = {}

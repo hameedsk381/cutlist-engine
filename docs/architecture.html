@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAD-to-Cutlist Engine — System Architecture</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2e;
+    --panel2: #1c2438;
+    --line: #2c3a55;
+    --text: #dce6f5;
+    --muted: #8fa3c0;
+    --accent: #4f9cf9;
+    --input: #9d7cf4;
+    --iface: #3fc98f;
+    --core: #4f9cf9;
+    --ai: #f2a35c;
+    --out: #e96c8b;
+    --data: #c9b458;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    padding: 32px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .layer { margin-bottom: 26px; }
+  .layer-label {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .layer-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .box {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 16px;
+    flex: 1 1 200px;
+    min-width: 200px;
+  }
+  .box h3 { margin: 0 0 4px; font-size: 14px; }
+  .box p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .box code {
+    background: #0b101b; padding: 1px 5px; border-radius: 4px;
+    font-size: 11px; color: #b8ccee;
+  }
+  .c-input  { border-top-color: var(--input); }
+  .c-iface  { border-top-color: var(--iface); }
+  .c-core   { border-top-color: var(--core); }
+  .c-ai     { border-top-color: var(--ai); }
+  .c-out    { border-top-color: var(--out); }
+  .c-data   { border-top-color: var(--data); }
+
+  .flow {
+    display: flex; align-items: center; gap: 0;
+    margin: 18px 0 6px;
+  }
+  .fnode {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .fnode.gate {
+    border-color: #e96c8b; color: #ffb7c8;
+  }
+  .arrow {
+    flex: 1; min-width: 26px; text-align: center; color: var(--accent);
+    font-size: 13px; position: relative;
+  }
+  .arrow::before { content: "──"; color: var(--line); letter-spacing: -1px; }
+  .arrow::after  { content: "▶"; font-size: 9px; position: absolute; right: -2px; top: 50%;
+                   transform: translateY(-52%); color: var(--accent); }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 34px;
+            font-size: 11px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<h1>CAD-to-Cutlist Engine — System Architecture</h1>
+<div class="sub">3D furniture model → extracted boards → nested sheets → CNC-ready DXF / G-code / cutlist artifacts</div>
+
+<!-- ================= INPUTS ================= -->
+<div class="layer">
+  <div class="layer-label">1 · Inputs</div>
+  <div class="row">
+    <div class="box c-input">
+      <h3>CAD / 3D Exports</h3>
+      <p><code>OBJ</code> · <code>STL</code> (bin + ASCII) · <code>DAE</code> · <code>DXF</code> (3DFACE / MESH / POLYFACE, ezdxf) · <code>JSON</code> triangle mesh</p>
+    </div>
+    <div class="box c-input">
+      <h3>SketchUp Plugin</h3>
+      <p><code>sketchup_plugin/cutlist_engine_loader.rb</code> — Extensions-menu loader: exports active selection to OBJ (mm), launches CLI</p>
+    </div>
+    <div class="box c-input">
+      <h3>Configuration</h3>
+      <p><code>overrides_example.json</code> (grain / priority / edge band / material / label) · <code>materials_example.json</code> (thickness, sheet size, cost) · <code>review_example.json</code> (accept / reject / rename)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= INTERFACES ================= -->
+<div class="layer">
+  <div class="layer-label">2 · Interfaces</div>
+  <div class="row">
+    <div class="box c-iface">
+      <h3>CLI — <code>cli.py</code></h3>
+      <p><code>cutlist-engine input.obj --output-dir out</code><br>kerf, grain-locked, sheet-cost, candidate sizes, G-code tunables, <code>--force</code> gate override</p>
+    </div>
+    <div class="box c-iface">
+      <h3>FastAPI Server — <code>server.py</code></h3>
+      <p><code>POST /api/extract</code> → session + boards<br><code>POST /api/finalize/{id}</code> → all artifacts<br><code>GET /api/download/{id}/{file}</code><br><code>/api/ai/label · /api/ai/describe · /api/ai/chat</code><br><code>/healthz</code></p>
+    </div>
+    <div class="box c-iface">
+      <h3>React / Vite Frontend — <code>frontend/</code></h3>
+      <p>Operator review SPA: upload → inspect each board (polygon thumb, confidence, warnings) → accept / reject / rename → one-click generate. Chat drawer for AI assistant.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= CORE ENGINE ================= -->
+<div class="layer">
+  <div class="layer-label">3 · Core Engine Pipeline (src/cutlist_engine)</div>
+  <div class="flow">
+    <div class="fnode">parsers.py<br><small>triangle stream</small></div>
+    <div class="arrow"></div>
+    <div class="fnode">geometry.py<br><small>plane clusters · contours · holes</small></div>
+    <div class="arrow"></div>
+    <div class="fnode">boards.py<br><small>pair planes → boards · dedup · confidence</small></div>
+    <div class="arrow"></div>
+    <div class="fnode gate">Quality Gate<br><small>min-confidence — refuses bad cutlist</small></div>
+    <div class="arrow"></div>
+    <div class="fnode">pipeline.py<br><small>overrides · edge band · materials · review · cost</small></div>
+    <div class="arrow"></div>
+    <div class="fnode">nesting.py<br><small>MaxRects · kerf · grain · priority · cut order</small></div>
+  </div>
+</div>
+
+<!-- ================= AI ================= -->
+<div class="layer">
+  <div class="layer-label">4 · AI Services (optional, Groq)</div>
+  <div class="row">
+    <div class="box c-ai">
+      <h3><code>ai.py</code> — Groq Llama-4 Scout</h3>
+      <p><b>label_parts()</b> — auto-name boards in Indian shop-floor terminology<br>
+         <b>describe_to_cutlist()</b> — natural language → structured cutlist<br>
+         <b>chat()</b> — context-aware workshop assistant</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= OUTPUTS ================= -->
+<div class="layer">
+  <div class="layer-label">5 · Outputs (outputs.py · dxf_export.py · gcode_export.py)</div>
+  <div class="row">
+    <div class="box c-out"><h3><code>report.json</code></h3><p>extraction, waste, sheets, strategy, model-fix, per-material data</p></div>
+    <div class="box c-out"><h3><code>cutlist.csv</code></h3><p>material, finished + cut size, edge band, grain</p></div>
+    <div class="box c-out"><h3><code>sheet_layout.html</code></h3><p>visual cutting plan, metrics, alerts, sheet comparison</p></div>
+    <div class="box c-out"><h3><code>labels.html</code></h3><p>printable A4 cards (2-up), grain arrow + edge band</p></div>
+    <div class="box c-out"><h3><code>dxf/sheet_NN.dxf</code></h3><p>layered DXF: SHEET · PART · PART_FINISH · OFFCUT · LABEL · GRAIN</p></div>
+    <div class="box c-out"><h3><code>gcode/sheet_NN.nc</code></h3><p>kerf-compensated RS-274, multi-pass plunge — GRBL / Mach3 / LinuxCNC / Fanuc / Haas</p></div>
+  </div>
+</div>
+
+<!-- ================= RUNTIME / PROD ================= -->
+<div class="layer">
+  <div class="layer-label">6 · Runtime &amp; Production Controls (env vars)</div>
+  <div class="row">
+    <div class="box c-data"><h3>Sessions</h3><p><code>CUTLIST_SESSION_DIR</code> (persisted review sessions, TTL via <code>CUTLIST_SESSION_TTL_HOURS</code>)</p></div>
+    <div class="box c-data"><h3>Security</h3><p><code>CUTLIST_API_TOKEN</code> — Bearer auth on <code>/api/*</code> when set</p></div>
+    <div class="box c-data"><h3>Limits</h3><p><code>CUTLIST_MAX_UPLOAD_MB</code> (100) · <code>CUTLIST_MAX_TRIANGLES</code> (500k)</p></div>
+  </div>
+</div>
+
+<div class="legend">
+  <span><i class="dot" style="background:var(--input)"></i> Inputs</span>
+  <span><i class="dot" style="background:var(--iface)"></i> Interfaces</span>
+  <span><i class="dot" style="background:var(--core)"></i> Core pipeline</span>
+  <span><i class="dot" style="background:#e96c8b"></i> Quality gate</span>
+  <span><i class="dot" style="background:var(--ai)"></i> AI (optional)</span>
+  <span><i class="dot" style="background:var(--out)"></i> Artifacts</span>
+  <span><i class="dot" style="background:var(--data)"></i> Runtime / config</span>
+</div>
+
+</body>
+</html>

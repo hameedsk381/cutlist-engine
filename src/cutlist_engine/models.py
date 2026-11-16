@@ -213,6 +213,12 @@ class ExtractionReport:
     unmatched_surface_count: int
     confidence: float
     warnings: tuple[str, ...] = ()
+    solid_part_count: int = 0
+    """Closed solids found in the model (one per modelled part)."""
+    inferred_board_count: int = 0
+    """Boards reconstructed by pairing loose faces rather than measured from a solid."""
+    skipped_parts: tuple[str, ...] = ()
+    """Names of closed solids that are not flat panels (hardware, legs, decoration)."""
 
 
 @dataclass(frozen=True)

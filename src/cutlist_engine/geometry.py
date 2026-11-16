@@ -261,6 +261,86 @@ def contour_loops(
     return ContourLoops(tuple(outer), tuple(tuple(hole) for hole in normalized_holes))
 
 
+def align_to_min_rect(
+    outer: tuple[Vec2, ...],
+    holes: tuple[tuple[Vec2, ...], ...] = (),
+) -> tuple[tuple[Vec2, ...], tuple[tuple[Vec2, ...], ...]]:
+    """Rotate an outline so its minimum-area bounding rectangle is axis-aligned.
+
+    The projection basis of a plane is arbitrary, so a panel that is tilted in
+    its own plane would otherwise be measured by a bounding box that is larger
+    than the panel. Outlines that are already aligned are returned unchanged.
+    """
+    from math import atan2, cos, pi, sin
+
+    if len(outer) < 3:
+        return outer, holes
+
+    hull = _convex_hull(list(outer))
+    if len(hull) < 3:
+        return outer, holes
+
+    best_angle = 0.0
+    best_area = None
+    for i in range(len(hull)):
+        a, b = hull[i], hull[(i + 1) % len(hull)]
+        dx, dy = b.x - a.x, b.y - a.y
+        if dx * dx + dy * dy <= EPSILON:
+            continue
+        angle = atan2(dy, dx) % (pi / 2)
+        if angle > pi / 4:
+            angle -= pi / 2
+        c, s = cos(-angle), sin(-angle)
+        xs = [p.x * c - p.y * s for p in hull]
+        ys = [p.x * s + p.y * c for p in hull]
+        area = (max(xs) - min(xs)) * (max(ys) - min(ys))
+        if (
+            best_area is None
+            or area < best_area * (1 - 1e-9)
+            or (abs(area - best_area) <= best_area * 1e-9 and abs(angle) < abs(best_angle))
+        ):
+            best_area, best_angle = area, angle
+
+    if abs(best_angle) < 1e-6:
+        return outer, holes
+
+    c, s = cos(-best_angle), sin(-best_angle)
+
+    def rot(p: Vec2) -> Vec2:
+        return Vec2(p.x * c - p.y * s, p.x * s + p.y * c)
+
+    rotated = [rot(p) for p in outer]
+    min_x = min(p.x for p in rotated)
+    min_y = min(p.y for p in rotated)
+
+    def place(p: Vec2) -> Vec2:
+        r = rot(p)
+        return Vec2(round(r.x - min_x, 4), round(r.y - min_y, 4))
+
+    return tuple(place(p) for p in outer), tuple(tuple(place(p) for p in hole) for hole in holes)
+
+
+def _convex_hull(points: list[Vec2]) -> list[Vec2]:
+    pts = sorted({(p.x, p.y) for p in points})
+    if len(pts) < 3:
+        return [Vec2(x, y) for x, y in pts]
+
+    def cross(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list[tuple[float, float]] = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: list[tuple[float, float]] = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return [Vec2(x, y) for x, y in lower[:-1] + upper[:-1]]
+
+
 def _simplify_collinear(poly: list[Vec2], angle_deg: float) -> list[Vec2]:
     if len(poly) < 4:
         return poly

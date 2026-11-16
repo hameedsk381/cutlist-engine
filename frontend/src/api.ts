@@ -16,7 +16,7 @@ export async function processOneShot(file: File, config: Record<string, number>)
   return r.data;
 }
 
-export async function extractBoards(file: File, config: Record<string, any>): Promise<ExtractResult> {
+export async function extractBoards(file: File, config: Record<string, unknown>): Promise<ExtractResult> {
   const fd = new FormData();
   fd.append('file', file);
   Object.entries(config).forEach(([k, v]) => fd.append(k, String(v)));
@@ -27,13 +27,14 @@ export async function extractBoards(file: File, config: Record<string, any>): Pr
 export async function finalizeSession(
   sessionId: string,
   review: ReviewDecisions,
-  overrides: Record<string, any> = {},
+  overrides: Record<string, unknown> = {},
+  force = false,
 ): Promise<FinalizeResult> {
   const r = await api.post(`/api/finalize/${sessionId}`, {
     review,
     overrides,
     emit_gcode: true,
-    force: false,
+    force,
   });
   return r.data;
 }
@@ -45,7 +46,7 @@ export async function aiDescribe(description: string, config: Record<string, num
 
 export async function aiChat(
   message: string,
-  context?: any,
+  context?: unknown,
   history?: { role: string; content: string }[],
   sessionId?: string,
 ): Promise<string> {
@@ -55,4 +56,16 @@ export async function aiChat(
 
 export function downloadUrl(sessionId: string, filename: string): string {
   return `/api/download/${sessionId}/${filename}`;
+}
+
+/** Turn any request failure into a sentence a workshop user can act on. */
+export function friendlyError(error: unknown, fallback: string): string {
+  const err = error as { code?: string; response?: { status?: number; data?: { detail?: unknown } } };
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string' && detail) return detail;
+  if (err?.code === 'ERR_NETWORK' || (err?.response?.status ?? 0) >= 502) {
+    return 'Cannot reach the CutList server. Check that it is running, then try again.';
+  }
+  if (err?.response?.status === 413) return 'That file is too large to upload.';
+  return fallback;
 }

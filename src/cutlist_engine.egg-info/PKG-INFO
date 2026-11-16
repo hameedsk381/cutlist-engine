@@ -8,3 +8,5 @@ Requires-Dist: uvicorn>=0.23.0
 Requires-Dist: python-multipart>=0.0.6
 Provides-Extra: cad
 Requires-Dist: ezdxf>=1.3.0; extra == "cad"
+Provides-Extra: ai
+Requires-Dist: groq>=0.9.0; extra == "ai"

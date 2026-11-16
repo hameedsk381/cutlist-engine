@@ -1,8 +1,11 @@
 README.md
 pyproject.toml
 src/cutlist_engine/__init__.py
+src/cutlist_engine/ai.py
 src/cutlist_engine/boards.py
 src/cutlist_engine/cli.py
+src/cutlist_engine/dxf_export.py
+src/cutlist_engine/gcode_export.py
 src/cutlist_engine/geometry.py
 src/cutlist_engine/models.py
 src/cutlist_engine/nesting.py

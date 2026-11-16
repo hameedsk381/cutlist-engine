@@ -23,6 +23,18 @@ gate that refuses to ship a bad cutlist.
 python -m pip install -e .
 ```
 
+## Docker (production)
+
+```bash
+cp .env.example .env   # set CUTLIST_API_TOKEN (+ GROQ_API_KEY for AI)
+docker compose up -d --build
+curl http://localhost:8000/healthz
+```
+
+One container serves the review SPA, API and artifacts; sessions persist on a
+named volume. See [docs/PRODUCTION.md](docs/PRODUCTION.md) for TLS, env vars,
+backups and scaling notes.
+
 ## Run
 
 ```powershell
@@ -171,7 +183,8 @@ See [USER_GUIDE.md](USER_GUIDE.md) for the complete operator, CLI, API, and prod
 ```
 parsers.py     OBJ/STL/DAE/DXF/JSON -> Triangle stream
 geometry.py    plane clustering, contour extraction
-boards.py      paired-face board extraction, dedup -> CutlistItem
+boards.py      per-part board extraction (closed solids measured directly,
+               loose faces paired as a fallback), dedup -> CutlistItem
 nesting.py     MaxRects with priority / grain / kerf / cut-sequence ordering
 pipeline.py    overrides, edge-band, multi-material, review, cost
 outputs.py     report.json, cutlist.csv, sheet_layout.html, labels.html

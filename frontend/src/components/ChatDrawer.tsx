@@ -1,140 +1,86 @@
-import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { aiChat } from '../api';
+import { LoaderCircle, Send, X } from 'lucide-react';
+import { aiChat, friendlyError } from '../api';
 
 interface Props {
-  context: any;
+  context: unknown;
   sessionId?: string;
   onClose: () => void;
 }
 
+interface Message { role: 'user' | 'assistant'; content: string; }
+
+const SUGGESTIONS = [
+  'How many sheets for 3 of these?',
+  'Which edges should get edge banding?',
+  'What hardware do I need?',
+];
+
 export default function ChatDrawer({ context, sessionId, onClose }: Props) {
-  const [msg, setMsg] = useState('');
-  const [history, setHistory] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages, sending]);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [history, sending]);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
-  const send = async () => {
-    const text = msg.trim();
-    if (!text || sending) return;
+  const send = async (text: string) => {
+    const question = text.trim();
+    if (!question || sending) return;
+    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    setMessages(m => [...m, { role: 'user', content: question }]);
+    setInput('');
     setSending(true);
-    const userMsg = { role: 'user', content: text };
-    setHistory(h => [...h, userMsg]);
-    setMsg('');
-
     try {
-      const response = await aiChat(text, context, history, sessionId);
-      setHistory(h => [...h, { role: 'assistant', content: response }]);
-    } catch {
-      setHistory(h => [...h, { role: 'assistant', content: 'Sorry, I could not connect to the AI service.' }]);
+      const answer = await aiChat(question, context, history, sessionId);
+      setMessages(m => [...m, { role: 'assistant', content: answer }]);
+    } catch (err) {
+      setMessages(m => [...m, { role: 'assistant', content: friendlyError(err, 'Sorry, I could not answer that just now. Please try again.') }]);
     } finally {
       setSending(false);
     }
   };
 
-  const boardCount = context?.boards?.length || 0;
-  const sheetCount = context?.sheets?.length || 0;
-
   return (
-    <div className="chat-drawer">
-      {/* Header */}
-      <div className="flex items-center justify-between" style={{
-        padding: '16px 20px', borderBottom: '1px solid var(--border)',
-      }}>
-        <div className="flex items-center gap-2">
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: 'var(--accent-dim)', color: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <MessageSquare size={16} />
-          </div>
-          <div>
-            <h3 style={{ fontSize: 14 }}>Workshop Brain</h3>
-            <p style={{ fontSize: 11, color: 'var(--text-dim)' }}>AI-powered assistant</p>
-          </div>
+    <aside className="drawer" role="dialog" aria-label="Ask about this job">
+      <div className="drawer-head">
+        <div style={{ flex: 1 }}>
+          <h2>Ask about this job</h2>
+          <div className="small muted">Answers are written by AI. Check before relying on them.</div>
         </div>
-        <button className="btn btn-icon btn-ghost" onClick={onClose}>
-          <X size={18} />
-        </button>
+        <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}><X size={22} /></button>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* Welcome */}
-        <div style={{
-          padding: 14, borderRadius: 'var(--radius-sm)',
-          background: 'var(--surface-hover)', fontSize: 13,
-          color: 'var(--text-secondary)', lineHeight: 1.6,
-        }}>
-          नमस्ते! I'm your AI workshop assistant. I have context for <strong style={{ color: 'var(--text)' }}>{boardCount} boards</strong> and <strong style={{ color: 'var(--text)' }}>{sheetCount} sheets</strong>. Ask me about dimensions, material, assembly tips, or cost estimates!
-        </div>
-
-        {/* Quick prompts */}
-        {history.length === 0 && (
-          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-            {['What hardware do I need?', 'How to reduce waste?', 'Edge banding advice'].map(q => (
-              <button
-                key={q}
-                className="btn btn-sm btn-secondary"
-                onClick={() => { setMsg(q); }}
-                style={{ fontSize: 11 }}
-              >{q}</button>
-            ))}
-          </div>
-        )}
-
-        {/* Chat history */}
-        {history.map((h, i) => (
-          <div
-            key={i}
-            style={{
-              padding: 12, borderRadius: 'var(--radius-sm)', fontSize: 13,
-              ...(h.role === 'user'
-                ? { background: 'var(--accent)', color: '#000', alignSelf: 'flex-end', maxWidth: '85%', fontWeight: 500 }
-                : { background: 'var(--surface-hover)', color: 'var(--text)', alignSelf: 'flex-start', maxWidth: '90%' }),
-            }}
-          >
-            <div className="chat-md">
-              <ReactMarkdown>{h.content}</ReactMarkdown>
+      <div className="drawer-body" aria-live="polite">
+        {messages.length === 0 && (
+          <>
+            <p className="muted">Ask anything about this cutting plan, the material or how to build it.</p>
+            <div className="chips">
+              {SUGGESTIONS.map(s => <button key={s} type="button" className="chip" style={{ fontSize: 14 }} onClick={() => send(s)}>{s}</button>)}
             </div>
+          </>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`msg ${m.role === 'user' ? 'msg-user' : 'msg-bot'}`}>
+            {m.role === 'user' ? m.content : <ReactMarkdown>{m.content}</ReactMarkdown>}
           </div>
         ))}
-
-        {sending && (
-          <div className="flex items-center gap-2" style={{ padding: 12, fontSize: 12, color: 'var(--text-dim)' }}>
-            <div className="spinner" />
-            Thinking…
-          </div>
-        )}
+        {sending && <div className="msg msg-bot"><LoaderCircle size={18} className="spinner" /></div>}
+        <div ref={endRef} />
       </div>
 
-      {/* Input */}
-      <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
-        <div className="flex gap-2">
-          <input
-            className="input"
-            value={msg}
-            onChange={e => setMsg(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && send()}
-            placeholder="Ask about your project…"
-            style={{ fontSize: 13 }}
-          />
-          <button
-            className="btn btn-primary btn-icon"
-            onClick={send}
-            disabled={!msg.trim() || sending}
-            style={{ flexShrink: 0 }}
-          >
-            <Send size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
+      <form className="drawer-foot" onSubmit={e => { e.preventDefault(); send(input); }}>
+        <input ref={inputRef} className="input" placeholder="Type your question" aria-label="Your question" value={input} onChange={e => setInput(e.target.value)} />
+        <button type="submit" className="btn btn-primary" disabled={!input.trim() || sending} aria-label="Send"><Send size={20} /></button>
+      </form>
+    </aside>
   );
 }

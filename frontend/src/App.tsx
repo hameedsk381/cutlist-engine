@@ -1,95 +1,100 @@
 import { useState } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { Check, LayoutGrid, LoaderCircle, MessageCircle, RotateCcw } from 'lucide-react';
 import UploadView from './components/UploadView';
 import ReviewView from './components/ReviewView';
 import Dashboard from './components/Dashboard';
 import ChatDrawer from './components/ChatDrawer';
-import { extractBoards, finalizeSession, aiDescribe } from './api';
+import { aiDescribe, extractBoards, finalizeSession, friendlyError } from './api';
 import type {
-  AppView, ProcessConfig, ProcessResult,
-  ExtractResult, FinalizeResult, ReviewDecisions,
+  AppView, ExtractResult, FinalizeResult, ProcessConfig, ProcessResult, ReviewDecisions,
 } from './types';
+
+const STEPS: { view: AppView; label: string }[] = [
+  { view: 'upload', label: 'Add your design' },
+  { view: 'review', label: 'Check the parts' },
+  { view: 'dashboard', label: 'Cutting plan' },
+];
 
 export default function App() {
   const [view, setView] = useState<AppView>('upload');
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Extract flow state
+  const [config, setConfig] = useState<ProcessConfig | null>(null);
   const [extractData, setExtractData] = useState<ExtractResult | null>(null);
-  const [sessionId, setSessionId] = useState<string>('');
-
-  // Dashboard state
+  const [decisions, setDecisions] = useState<ReviewDecisions>({});
+  const [sessionId, setSessionId] = useState('');
   const [result, setResult] = useState<ProcessResult | null>(null);
   const [finalized, setFinalized] = useState<FinalizeResult | null>(null);
-
-  // Chat
   const [chatOpen, setChatOpen] = useState(false);
 
-  // --- Handlers ---
-
-  const handleUpload = async (file: File, config: ProcessConfig) => {
-    setLoading(true);
+  const handleUpload = async (file: File, cfg: ProcessConfig) => {
+    setBusy('Reading your design and finding the parts…');
     setError(null);
     try {
-      const data = await extractBoards(file, {
-        sheet_width: config.sheet_width,
-        sheet_height: config.sheet_height,
-        thickness: config.thickness,
-        kerf: config.kerf,
-        sheet_cost: config.sheet_cost,
-        currency: config.currency,
+      const data = await extractBoards(file, { ...cfg });
+      const initial: ReviewDecisions = {};
+      // Anything under 50 mm is almost always hardware; start with it switched off.
+      data.boards.forEach(b => {
+        const tiny = Math.min(b.length, b.width) < 50;
+        initial[b.id] = { accepted: !tiny, rename: '', reason: tiny ? 'Too small to be a board' : '' };
       });
+      setConfig(cfg);
       setExtractData(data);
+      setDecisions(initial);
       setSessionId(data.session_id);
+      setResult(null);
+      setFinalized(null);
       setView('review');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Upload failed');
+    } catch (err) {
+      setError(friendlyError(err, 'We could not read that file. Check it is a 3D export (OBJ, DAE, STL or DXF) and try again.'));
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
 
-  const handleDescribe = async (description: string, config: ProcessConfig) => {
-    setLoading(true);
+  const handleDescribe = async (description: string, cfg: ProcessConfig) => {
+    setBusy('Working out the parts from your description…');
     setError(null);
     try {
       const data = await aiDescribe(description, {
-        thickness: config.thickness,
-        sheet_width: config.sheet_width,
-        sheet_height: config.sheet_height,
-        kerf: config.kerf,
+        thickness: cfg.thickness, sheet_width: cfg.sheet_width, sheet_height: cfg.sheet_height, kerf: cfg.kerf,
       });
+      setConfig(cfg);
+      setExtractData(null);
+      setSessionId('');
       setResult(data);
       setFinalized(null);
-      setSessionId('');
       setView('dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'AI describe failed');
+    } catch (err) {
+      setError(friendlyError(err, 'We could not turn that description into parts. Try adding the overall width, height and depth.'));
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
 
-  const handleFinalize = async (decisions: ReviewDecisions) => {
+  const handleFinalize = async (force = false) => {
     if (!sessionId) return;
-    setLoading(true);
+    setBusy('Fitting the parts onto sheets…');
     setError(null);
     try {
-      const data = await finalizeSession(sessionId, decisions);
+      const data = await finalizeSession(sessionId, decisions, {}, force);
       setResult(data.summary);
       setFinalized(data);
       setView('dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Finalize failed');
+      window.scrollTo({ top: 0 });
+    } catch (err) {
+      setError(friendlyError(err, 'We could not make the cutting plan. Please try again.'));
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
 
   const handleReset = () => {
+    if (view !== 'upload' && !window.confirm('Start a new job? The current one will be cleared.')) return;
     setView('upload');
     setExtractData(null);
+    setDecisions({});
     setResult(null);
     setFinalized(null);
     setSessionId('');
@@ -97,110 +102,97 @@ export default function App() {
     setChatOpen(false);
   };
 
-  // --- Render ---
+  const currentIndex = STEPS.findIndex(s => s.view === view);
+  const canGoTo = (target: AppView) => target === 'review' && view === 'dashboard' && !!extractData;
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Top nav bar */}
-      <nav style={{
-        height: 48, padding: '0 20px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--surface)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexShrink: 0,
-      }}>
-        <div className="flex items-center gap-2">
-          <span style={{ fontSize: 20 }}>🪚</span>
-          <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em' }}>
-            CutList Engine
-          </span>
-          <span className="badge badge-success" style={{ marginLeft: 4 }}>v1.2</span>
+    <div className="app">
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true"><LayoutGrid size={20} /></span>
+            <span className="brand-name">CutList</span>
+          </div>
+
+          <nav className="stepper" aria-label="Progress">
+            {STEPS.map((step, i) => {
+              const state = i < currentIndex ? 'is-done' : i === currentIndex ? 'is-current' : '';
+              const clickable = canGoTo(step.view);
+              return (
+                <span key={step.view} style={{ display: 'contents' }}>
+                  {i > 0 && <span className="step-line" aria-hidden="true" />}
+                  <button
+                    type="button"
+                    className={`step ${state}`}
+                    disabled={!clickable}
+                    aria-current={i === currentIndex ? 'step' : undefined}
+                    onClick={() => clickable && setView(step.view)}
+                  >
+                    <span className="step-dot">{i < currentIndex ? <Check size={16} /> : i + 1}</span>
+                    <span className="step-label">{step.label}</span>
+                  </button>
+                </span>
+              );
+            })}
+          </nav>
+
+          <div className="topbar-actions">
+            {view === 'dashboard' && result && (
+              <button type="button" className="btn btn-ghost" onClick={() => setChatOpen(true)}>
+                <MessageCircle size={20} /> <span className="brand-name">Ask</span>
+              </button>
+            )}
+            {view !== 'upload' && (
+              <button type="button" className="btn btn-ghost" onClick={handleReset} aria-label="Start a new job">
+                <RotateCcw size={20} /> <span className="brand-name">New job</span>
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {view !== 'upload' && (
-            <button
-              className="btn btn-sm btn-secondary"
-              onClick={() => setChatOpen(true)}
-            >
-              <MessageSquare size={14} /> AI Chat
-            </button>
-          )}
-        </div>
-      </nav>
+      </header>
 
-      {/* Main content */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {view === 'upload' && (
-          <UploadView
-            onUploadFile={handleUpload}
-            onDescribe={handleDescribe}
-            loading={loading}
-            error={error}
-          />
-        )}
-
-        {view === 'review' && extractData && (
-          <ReviewView
-            data={extractData}
-            onFinalize={handleFinalize}
-            onBack={handleReset}
-            loading={loading}
-          />
-        )}
-
-        {view === 'dashboard' && result && (
-          <Dashboard
-            result={result}
-            finalized={finalized}
-            sessionId={sessionId}
-            onReset={handleReset}
-          />
-        )}
-      </div>
-
-      {/* Chat drawer */}
-      {chatOpen && result && (
-        <>
-          <div
-            style={{
-              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-              zIndex: 99, cursor: 'pointer',
-            }}
-            onClick={() => setChatOpen(false)}
-          />
-          <ChatDrawer
-            context={result}
-            sessionId={sessionId}
-            onClose={() => setChatOpen(false)}
-          />
-        </>
+      {view === 'upload' && (
+        <UploadView onUploadFile={handleUpload} onDescribe={handleDescribe} error={error} busy={!!busy} />
       )}
 
-      {/* Floating chat button */}
-      {view === 'dashboard' && !chatOpen && (
-        <button
-          onClick={() => setChatOpen(true)}
-          style={{
-            position: 'fixed', bottom: 24, right: 24,
-            width: 56, height: 56, borderRadius: '50%',
-            background: 'var(--accent)', color: '#000',
-            border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 20px rgba(16,185,129,0.3)',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            zIndex: 50,
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'scale(1.1)';
-            e.currentTarget.style.boxShadow = '0 6px 30px rgba(16,185,129,0.4)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.boxShadow = '0 4px 20px rgba(16,185,129,0.3)';
-          }}
-        >
-          <MessageSquare size={24} />
-        </button>
+      {view === 'review' && extractData && config && (
+        <ReviewView
+          data={extractData}
+          config={config}
+          decisions={decisions}
+          onChange={setDecisions}
+          onContinue={() => handleFinalize(false)}
+          error={error}
+          busy={!!busy}
+        />
+      )}
+
+      {view === 'dashboard' && result && (
+        <Dashboard
+          result={result}
+          finalized={finalized}
+          fromDescription={!extractData}
+          onBackToParts={extractData ? () => setView('review') : undefined}
+          onForce={() => handleFinalize(true)}
+          error={error}
+        />
+      )}
+
+      {busy && (
+        <div className="overlay" role="alertdialog" aria-live="assertive" aria-label={busy}>
+          <div className="busy">
+            <LoaderCircle size={40} className="spinner" />
+            <h2 style={{ marginTop: 12 }}>{busy}</h2>
+            <p className="muted small" style={{ marginTop: 6 }}>Large designs can take up to a minute.</p>
+          </div>
+        </div>
+      )}
+
+      {chatOpen && result && (
+        <>
+          <div className="overlay" style={{ zIndex: 65 }} onClick={() => setChatOpen(false)} />
+          <ChatDrawer context={result} sessionId={sessionId} onClose={() => setChatOpen(false)} />
+        </>
       )}
     </div>
   );

@@ -1,0 +1,33 @@
+# VCS
+.git
+.gitignore
+.claude
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.env
+.venv
+venv
+
+# Frontend (built inside the Docker stage)
+frontend/node_modules
+frontend/dist
+frontend/vite.svg
+
+# Tests and scratch artifacts (not needed in the image)
+tests/_tmp_out
+.pytest_cache
+
+# Large local sample files — exclude heavy binary samples
+*.dxf
+*.stl
+*.dae
+
+# Scratch scripts
+test.py
+test2.py
+debug_surfaces.py

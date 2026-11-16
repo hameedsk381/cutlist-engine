@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
 
-from .boards import build_cutlist, extract_boards
+from .boards import STOCK_THICKNESSES, build_cutlist, extract_boards
 from .models import (
     Board,
     CutlistItem,
@@ -76,6 +76,7 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
         triangles,
         expected_thickness=config.material_thickness,
         thickness_tolerance=config.thickness_tolerance,
+        stock_thicknesses=tuple(spec.thickness for spec in config.materials.values()) + STOCK_THICKNESSES,
     )
 
     raw_boards = extraction.boards
@@ -86,6 +87,11 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
 
     # Apply per-part overrides (grain, priority, edge-band, material, label).
     boards = [_apply_overrides(b, config) for b in boards]
+
+    # Parts whose thickness differs from the default stock cannot be cut from
+    # the default sheets; give them a material (and so sheets) of their own.
+    boards = [_route_by_thickness(b, config) for b in boards]
+    auto_materials = sorted({b.material for b in boards} - set(config.materials) - {_DEFAULT_MATERIAL})
 
     # Material registry. Resolves material name -> MaterialSpec. Falls back to defaults.
     material_registry = _resolve_materials(boards, config)
@@ -176,6 +182,7 @@ def process_triangles(triangles: list[Triangle], config: ProcessConfig) -> Proce
         min_part_dimension=min(config.min_part_length, config.min_part_width),
         min_board_confidence=config.min_board_confidence,
         board_count=len(boards),
+        auto_materials=tuple(auto_materials),
     )
 
     waste_optimization_report = waste_reports[0] if len(waste_reports) == 1 else _merge_waste_reports(waste_reports)
@@ -300,6 +307,20 @@ def _apply_overrides(board: Board, config: ProcessConfig) -> Board:
     )
 
 
+def _route_by_thickness(board: Board, config: ProcessConfig) -> Board:
+    base = config.material_thickness
+    if board.material != _DEFAULT_MATERIAL or base is None:
+        return board
+    if abs(board.thickness - base) <= config.thickness_tolerance:
+        return board
+    matches = [
+        name for name, spec in config.materials.items()
+        if abs(spec.thickness - board.thickness) <= config.thickness_tolerance
+    ]
+    material = matches[0] if len(matches) == 1 else f"{board.thickness:g}mm"
+    return replace(board, material=material)
+
+
 def _smart_label(raw: str) -> str:
     """Shorten long SketchUp group hierarchy names to meaningful last segments.
     e.g. 'Mesh1781 Group1575 Group1284 Group1283 Group190 Pooja_unit1 Model'
@@ -379,9 +400,10 @@ def _resolve_materials(boards: list[Board], config: ProcessConfig) -> dict[str, 
     used = {b.material or _DEFAULT_MATERIAL for b in boards}
     for name in used | {_DEFAULT_MATERIAL}:
         if name not in registry:
+            own = [b.thickness for b in boards if b.material == name] if name != _DEFAULT_MATERIAL else []
             registry[name] = MaterialSpec(
                 name=name,
-                thickness=config.material_thickness or 18.0,
+                thickness=own[0] if own else (config.material_thickness or 18.0),
                 sheet_width=config.sheet_width,
                 sheet_height=config.sheet_height,
                 sheet_cost=config.sheet_cost,
@@ -503,9 +525,37 @@ def _build_model_fix_report(
     min_part_dimension: float,
     min_board_confidence: float = 0.3,
     board_count: int,
+    auto_materials: tuple[str, ...] = (),
 ) -> ModelFixReport:
     issues: list[str] = []
     recommendations: list[str] = []
+
+    if extraction.skipped_parts:
+        shown = ", ".join(extraction.skipped_parts[:8])
+        more = len(extraction.skipped_parts) - 8
+        issues.append(
+            f"{len(extraction.skipped_parts)} solid part(s) are not flat panels and are not in the cutlist: "
+            f"{shown}{f', and {more} more' if more > 0 else ''}."
+        )
+        recommendations.append(
+            "Check the skipped parts above. If one is a real panel, model it as a flat solid of sheet thickness."
+        )
+    if extraction.inferred_board_count > 0:
+        issues.append(
+            f"{extraction.inferred_board_count} board(s) were inferred by pairing loose faces, not measured "
+            "from a closed solid. Their dimensions are less reliable."
+        )
+        recommendations.append(
+            "Model each panel as its own closed group or component so it is measured directly."
+        )
+    if auto_materials:
+        issues.append(
+            f"Parts with a different thickness were nested on their own sheets ({', '.join(auto_materials)}) "
+            "using the default sheet size and cost."
+        )
+        recommendations.append(
+            "Add these thicknesses to the materials file to set their real sheet size and cost."
+        )
 
     passes = extraction.confidence >= threshold and board_count > 0
 

@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from .geometry import bounding_contour, cluster_planes, contour_loops, unique_vertices
+from .geometry import align_to_min_rect, bounding_contour, cluster_planes, contour_loops, unique_vertices
 from .models import Board, CutlistItem, ExtractionReport, PlaneCluster, Triangle, Vec3
+
+
+# Sheet thicknesses (mm) a measured part is snapped to when within tolerance.
+STOCK_THICKNESSES: tuple[float, ...] = (3.0, 4.0, 6.0, 8.0, 9.0, 12.0, 15.0, 16.0, 18.0, 19.0, 25.0)
+
+# A closed solid thicker than this (mm) is treated as a non-panel part.
+MAX_PANEL_THICKNESS = 60.0
 
 
 @dataclass
@@ -52,41 +59,305 @@ def extract_boards(
     expected_thickness: float | None = None,
     thickness_tolerance: float = 0.5,
     normal_tolerance: float = 0.999,
+    stock_thicknesses: tuple[float, ...] = STOCK_THICKNESSES,
 ) -> BoardExtraction:
+    """Extract boards part by part.
+
+    Triangles are grouped by source object, then split into closed solids.
+    Each closed solid is one modelled part and is measured directly, so parts
+    that touch or share a plane never contaminate each other and every part
+    keeps its own thickness. Faces that do not form a closed solid fall back
+    to opposite-face pairing within their own source object.
+    """
     usable_triangles = [triangle for triangle in triangles if triangle.area() > 0]
+    warnings: list[str] = []
+    if not usable_triangles:
+        warnings.append("No usable triangle faces were found in the input geometry.")
+
+    groups: dict[str | None, list[Triangle]] = {}
+    for triangle in usable_triangles:
+        groups.setdefault(triangle.source_object, []).append(triangle)
+
+    boards: list[Board] = []
+    skipped_parts: list[str] = []
+    solid_part_count = 0
+    solid_board_count = 0
+    inferred_board_count = 0
+    plane_count = 0
+    surface_count = 0
+    unmatched_surface_count = 0
+
+    for name, group in groups.items():
+        solids, loose = _split_closed_solids(group)
+        solid_part_count += len(solids)
+        for solid in solids:
+            board, reason = _board_from_solid(
+                solid,
+                name,
+                expected_thickness=expected_thickness,
+                thickness_tolerance=thickness_tolerance,
+                normal_tolerance=normal_tolerance,
+                stock_thicknesses=stock_thicknesses,
+            )
+            if board is None:
+                skipped_parts.append(f"{name or 'unnamed solid'} ({reason})")
+                continue
+            boards.append(board)
+            solid_board_count += 1
+
+        if loose:
+            paired = _pair_loose_surfaces(loose, expected_thickness, thickness_tolerance, normal_tolerance)
+            boards.extend(paired.boards)
+            inferred_board_count += len(paired.boards)
+            plane_count += paired.plane_count
+            surface_count += paired.surface_count
+            unmatched_surface_count += paired.unmatched_surface_count
+
+    boards = [replace(board, id=f"panel_{index:03d}") for index, board in enumerate(boards, start=1)]
+
+    if unmatched_surface_count:
+        warnings.append(f"{unmatched_surface_count} planar surfaces were not paired into manufacturable boards.")
+    if inferred_board_count:
+        warnings.append(
+            f"{inferred_board_count} board(s) were inferred by pairing loose faces because the geometry "
+            "was not a closed solid; check their dimensions before cutting."
+        )
+    if skipped_parts:
+        warnings.append(
+            f"{len(skipped_parts)} solid part(s) are not flat panels and were left out of the cutlist: "
+            + _summarize_names(skipped_parts)
+        )
+
+    paired_units = 2 * solid_board_count + (surface_count - unmatched_surface_count)
+    total_units = 2 * solid_board_count + surface_count
+    if total_units:
+        board_confidence = sum(board.confidence for board in boards) / len(boards) if boards else 0.0
+        confidence = round((paired_units / total_units) * 0.4 + board_confidence * 0.6, 3)
+    else:
+        confidence = 0.0
+
+    report = ExtractionReport(
+        triangle_count=len(triangles),
+        usable_triangle_count=len(usable_triangles),
+        plane_count=plane_count,
+        surface_count=surface_count,
+        board_count=len(boards),
+        unmatched_surface_count=unmatched_surface_count,
+        confidence=confidence,
+        warnings=tuple(warnings),
+        solid_part_count=solid_part_count,
+        inferred_board_count=inferred_board_count,
+        skipped_parts=tuple(skipped_parts),
+    )
+    return BoardExtraction(boards=boards, report=report)
+
+
+def _summarize_names(names: list[str], limit: int = 8) -> str:
+    counts: dict[str, int] = {}
+    for name in names:
+        counts[name] = counts.get(name, 0) + 1
+    parts = [f"{name} x{count}" if count > 1 else name for name, count in counts.items()]
+    shown = ", ".join(parts[:limit])
+    return shown + (f", and {len(parts) - limit} more" if len(parts) > limit else "")
+
+
+# ---------------------------------------------------------------------------
+# Closed solids: one modelled part -> one board, measured directly
+# ---------------------------------------------------------------------------
+
+
+def _split_closed_solids(
+    triangles: list[Triangle], tolerance: float = 0.01
+) -> tuple[list[list[Triangle]], list[Triangle]]:
+    """Split triangles into closed solids and leftover loose triangles.
+
+    Triangles are joined only across edges used by exactly two triangles, so
+    two boxes that touch along an edge or a face stay separate solids.
+    """
+    edge_to_triangles: dict[tuple, list[int]] = {}
+    for index, triangle in enumerate(triangles):
+        keys = [_vertex_key(vertex, tolerance) for vertex in triangle.vertices]
+        for i in range(3):
+            ka, kb = keys[i], keys[(i + 1) % 3]
+            if ka == kb:
+                continue
+            edge_to_triangles.setdefault((ka, kb) if ka < kb else (kb, ka), []).append(index)
+
+    parent = list(range(len(triangles)))
+
+    def find(i: int) -> int:
+        root = i
+        while parent[root] != root:
+            root = parent[root]
+        while parent[i] != root:
+            parent[i], i = root, parent[i]
+        return root
+
+    for indexes in edge_to_triangles.values():
+        if len(indexes) == 2:
+            root_a, root_b = find(indexes[0]), find(indexes[1])
+            if root_a != root_b:
+                parent[root_a] = root_b
+
+    open_roots: set[int] = set()
+    for indexes in edge_to_triangles.values():
+        per_root: dict[int, int] = {}
+        for index in indexes:
+            root = find(index)
+            per_root[root] = per_root.get(root, 0) + 1
+        for root, count in per_root.items():
+            if count != 2:
+                open_roots.add(root)
+
+    components: dict[int, list[Triangle]] = {}
+    for index, triangle in enumerate(triangles):
+        components.setdefault(find(index), []).append(triangle)
+
+    solids: list[list[Triangle]] = []
+    loose: list[Triangle] = []
+    for root, component in components.items():
+        if root in open_roots or len(component) < 4:
+            loose.extend(component)
+        else:
+            solids.append(component)
+    return solids, loose
+
+
+def _board_from_solid(
+    triangles: list[Triangle],
+    name: str | None,
+    *,
+    expected_thickness: float | None,
+    thickness_tolerance: float,
+    normal_tolerance: float,
+    stock_thicknesses: tuple[float, ...],
+) -> tuple[Board | None, str]:
+    # Thickness axis = normal direction carrying the most surface area.
+    directions: dict[tuple[int, int, int], list] = {}
+    for triangle in triangles:
+        normal = triangle.normal()
+        dominant = max(normal.as_tuple(), key=abs)
+        if dominant < 0:
+            normal = normal * -1.0
+        key = (round(normal.x * 50), round(normal.y * 50), round(normal.z * 50))
+        entry = directions.setdefault(key, [normal, 0.0])
+        entry[1] += triangle.area()
+    axis: Vec3 = max(directions.values(), key=lambda entry: entry[1])[0]
+
+    depths = [vertex.dot(axis) for triangle in triangles for vertex in triangle.vertices]
+    low, high = min(depths), max(depths)
+    measured = high - low
+    if measured <= 0.01:
+        return None, "no measurable thickness"
+
+    plane_tolerance = min(0.1, measured / 4.0)
+    low_face: list[Triangle] = []
+    high_face: list[Triangle] = []
+    for triangle in triangles:
+        if abs(triangle.normal().dot(axis)) < normal_tolerance:
+            continue
+        depth = triangle.a.dot(axis)
+        if depth - low <= plane_tolerance:
+            low_face.append(triangle)
+        elif high - depth <= plane_tolerance:
+            high_face.append(triangle)
+
+    low_area = sum(triangle.area() for triangle in low_face)
+    high_area = sum(triangle.area() for triangle in high_face)
+    if low_area <= 0 or high_area <= 0:
+        return None, "no pair of flat opposite faces"
+    face_ratio = min(low_area, high_area) / max(low_area, high_area)
+    if face_ratio < 0.5:
+        return None, "opposite faces do not match"
+
+    face = low_face if low_area >= high_area else high_face
+    loops = contour_loops(face, axis)
+    contour, holes = loops.outer, loops.holes
+    if not contour:
+        contour, holes = bounding_contour(unique_vertices(face), axis), ()
+    contour, holes = align_to_min_rect(contour, holes)
+    size_x = max(point.x for point in contour) - min(point.x for point in contour)
+    size_y = max(point.y for point in contour) - min(point.y for point in contour)
+    if max(low_area, high_area) < 0.3 * size_x * size_y:
+        return None, "faces are not panel-shaped"
+    if measured > min(size_x, size_y) + thickness_tolerance:
+        return None, f"{measured:.0f} mm deep, thicker than it is wide"
+    if measured > MAX_PANEL_THICKNESS:
+        return None, f"{measured:.0f} mm thick, not sheet material"
+
+    warnings: list[str] = []
+    confidence = face_ratio
+    candidates = ([expected_thickness] if expected_thickness else []) + list(stock_thicknesses)
+    nearest = min(candidates, key=lambda value: abs(value - measured)) if candidates else None
+    if nearest is not None and abs(nearest - measured) <= thickness_tolerance:
+        thickness = float(nearest)
+    else:
+        thickness = round(measured, 2)
+        confidence -= 0.25
+        warnings.append(f"Thickness {thickness:g} mm is not a standard sheet thickness.")
+    if face_ratio < 0.98:
+        warnings.append(
+            f"Opposite faces differ in area by {(1.0 - face_ratio) * 100.0:.1f}% (rebate, pocket or profile)."
+        )
+
+    board = _make_board(
+        contour,
+        holes,
+        thickness,
+        source_planes=("solid", name or ""),
+        confidence=round(max(0.05, min(1.0, confidence)), 3),
+        warnings=tuple(warnings),
+        source_objects=(name,) if name else (),
+    )
+    return board, ""
+
+
+# ---------------------------------------------------------------------------
+# Loose faces: fall back to pairing opposite planar surfaces
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _PairingResult:
+    boards: list[Board]
+    plane_count: int
+    surface_count: int
+    unmatched_surface_count: int
+
+
+def _pair_loose_surfaces(
+    triangles: list[Triangle],
+    expected_thickness: float | None,
+    thickness_tolerance: float,
+    normal_tolerance: float,
+) -> _PairingResult:
     planes = cluster_planes(
-        usable_triangles,
+        triangles,
         normal_tolerance=normal_tolerance,
         distance_tolerance=thickness_tolerance,
     )
-    # Filter out planes with very small total area (e.g. less than 50x50mm) 
+    # Filter out planes with very small total area (e.g. less than 50x50mm)
     # to avoid O(N^2) explosion on highly curved organic surfaces
     planes = [p for p in planes if sum(t.area() for t in p.triangles) >= 2500.0]
     surfaces = _split_surfaces(planes)
     boards: list[Board] = []
-    used_pairs: set[tuple[str, str]] = set()
     used_surfaces: set[str] = set()
-    warnings: list[str] = []
-
-    if not usable_triangles:
-        warnings.append("No usable triangle faces were found in the input geometry.")
 
     for first in surfaces:
         if first.id in used_surfaces:
             continue
         candidates = []
         for second in surfaces:
-            if first.id == second.id:
+            if first.id == second.id or second.id in used_surfaces:
                 continue
-            if second.id in used_surfaces:
+            # Plane normals are canonicalised to a non-negative offset, so the two
+            # faces of a panel that straddles the origin carry opposite normals.
+            alignment = first.normal.dot(second.normal)
+            if abs(abs(alignment) - 1.0) > (1.0 - normal_tolerance):
                 continue
-            pair_key = tuple(sorted((first.id, second.id)))
-            if pair_key in used_pairs:
-                continue
-            if abs(first.normal.dot(second.normal) - 1.0) > (1.0 - normal_tolerance):
-                continue
+            second_offset = second.offset if alignment > 0 else -second.offset
 
-            thickness = abs(first.offset - second.offset)
+            thickness = abs(first.offset - second_offset)
             if thickness <= 0:
                 continue
             if expected_thickness is not None and abs(thickness - expected_thickness) > thickness_tolerance:
@@ -101,14 +372,7 @@ def extract_boards(
             if area_ratio < 0.5:
                 continue  # Opposite faces must have at least 50% area overlap
 
-            candidates.append(
-                (
-                    lateral_dist,
-                    abs(thickness - (expected_thickness or thickness)),
-                    thickness,
-                    second,
-                )
-            )
+            candidates.append((lateral_dist, abs(thickness - (expected_thickness or thickness)), thickness, second))
 
         if not candidates:
             continue
@@ -116,12 +380,9 @@ def extract_boards(
         lateral_distance, thickness_error, thickness, second = sorted(candidates, key=lambda item: (item[0], item[1]))[0]
         if expected_thickness is not None and abs(thickness - expected_thickness) <= thickness_tolerance:
             thickness = expected_thickness
-        pair_key = tuple(sorted((first.id, second.id)))
-        used_pairs.add(pair_key)
         used_surfaces.update((first.id, second.id))
         boards.append(
             _board_from_planes(
-                len(boards) + 1,
                 first,
                 second,
                 thickness,
@@ -130,26 +391,11 @@ def extract_boards(
             )
         )
 
-    unmatched_surface_count = len([surface for surface in surfaces if surface.id not in used_surfaces])
-    if unmatched_surface_count:
-        warnings.append(f"{unmatched_surface_count} planar surfaces were not paired into manufacturable boards.")
-
-    confidence = _overall_confidence(boards, surfaces, unmatched_surface_count)
-    report = ExtractionReport(
-        triangle_count=len(triangles),
-        usable_triangle_count=len(usable_triangles),
-        plane_count=len(planes),
-        surface_count=len(surfaces),
-        board_count=len(boards),
-        unmatched_surface_count=unmatched_surface_count,
-        confidence=confidence,
-        warnings=tuple(warnings),
-    )
-    return BoardExtraction(boards=boards, report=report)
+    unmatched = len([surface for surface in surfaces if surface.id not in used_surfaces])
+    return _PairingResult(boards, len(planes), len(surfaces), unmatched)
 
 
 def _board_from_planes(
-    index: int,
     first: _Surface,
     second: _Surface,
     thickness: float,
@@ -166,33 +412,54 @@ def _board_from_planes(
         vertices = unique_vertices(face.triangles)
         contour = bounding_contour(vertices, face.normal)
         holes = ()
+    contour, holes = align_to_min_rect(contour, holes)
+    return _make_board(
+        contour,
+        holes,
+        thickness,
+        source_planes=(first.id, second.id),
+        confidence=confidence,
+        warnings=warnings,
+        source_objects=tuple(
+            sorted({triangle.source_object for triangle in first.triangles + second.triangles if triangle.source_object})
+        ),
+    )
+
+
+def _make_board(
+    contour: tuple,
+    holes: tuple,
+    thickness: float,
+    *,
+    source_planes: tuple[str, str],
+    confidence: float,
+    warnings: tuple[str, ...],
+    source_objects: tuple[str, ...],
+) -> Board:
     width = max(point.x for point in contour) - min(point.x for point in contour)
     height = max(point.y for point in contour) - min(point.y for point in contour)
-    length, board_width = sorted((width, height), reverse=True)
+    length, board_width = sorted((round(width, 3), round(height, 3)), reverse=True)
 
     # Tag boards whose outer loop departs significantly from a plain rectangle so
     # downstream consumers (DXF, G-code, label sheet) know to use the polygon.
     extra_warnings = list(warnings)
-    is_rectangular = _is_axis_aligned_rectangle(contour)
-    if not is_rectangular:
+    if not _is_axis_aligned_rectangle(contour):
         extra_warnings.append("Non-rectangular outer contour detected; cut path will follow the polygon, not the bounding box.")
     if holes:
         extra_warnings.append(f"{len(holes)} interior cutout(s) detected; DXF and G-code will include hole cut paths.")
 
     return Board(
-        id=f"panel_{index:03d}",
+        id="panel_000",
         length=length,
         width=board_width,
         thickness=thickness,
         area=(length * board_width) / 1_000_000.0,
         contour=contour,
-        source_planes=(first.id, second.id),
+        source_planes=source_planes,
         holes=holes,
         confidence=confidence,
         warnings=tuple(extra_warnings),
-        source_objects=tuple(
-            sorted({triangle.source_object for triangle in first.triangles + second.triangles if triangle.source_object})
-        ),
+        source_objects=source_objects,
     )
 
 
@@ -311,14 +578,6 @@ def _pair_warnings(
     if thickness_error > thickness_tolerance * 0.5:
         warnings.append(f"Detected thickness is close to tolerance limit by {thickness_error:.2f} mm.")
     return tuple(warnings)
-
-
-def _overall_confidence(boards: list[Board], surfaces: list[_Surface], unmatched_surface_count: int) -> float:
-    if not surfaces:
-        return 0.0
-    paired_surface_ratio = (len(surfaces) - unmatched_surface_count) / len(surfaces)
-    board_confidence = sum(board.confidence for board in boards) / len(boards) if boards else 0.0
-    return round((paired_surface_ratio * 0.4) + (board_confidence * 0.6), 3)
 
 
 def build_cutlist(boards: list[Board], tolerance: float = 0.5) -> list[CutlistItem]:
