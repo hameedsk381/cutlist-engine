@@ -1,7 +1,34 @@
 import axios from 'axios';
 import type { ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions } from './types';
 
-const api = axios.create({ baseURL: '' });
+/**
+ * Bearer token for /api/* routes.
+ * - Build time: VITE_API_TOKEN is embedded into the bundle (Docker build arg).
+ * - Runtime:    localStorage 'cutlist_api_token' overrides the build-time value,
+ *               e.g. localStorage.setItem('cutlist_api_token', '...')
+ */
+export const apiToken: string =
+  (typeof window !== 'undefined' && window.localStorage.getItem('cutlist_api_token')) ||
+  (import.meta.env.VITE_API_TOKEN as string | undefined) ||
+  '';
+
+/**
+ * Desktop (Tauri) apps talk to the bundled Python engine sidecar on
+ * 127.0.0.1:8765; the browser app uses same-origin (empty baseURL).
+ */
+const DESKTOP_API_BASE =
+  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+    ? 'http://127.0.0.1:8765'
+    : '';
+
+const api = axios.create({ baseURL: DESKTOP_API_BASE });
+
+if (apiToken) {
+  api.interceptors.request.use((config) => {
+    config.headers.set('Authorization', `Bearer ${apiToken}`);
+    return config;
+  });
+}
 
 export async function healthCheck() {
   const r = await api.get('/healthz');
@@ -56,6 +83,28 @@ export async function aiChat(
 
 export function downloadUrl(sessionId: string, filename: string): string {
   return `/api/download/${sessionId}/${filename}`;
+}
+
+/**
+ * Download or open a protected artifact with the Authorization header attached.
+ * Plain <a href> navigation cannot carry headers, so we fetch the file as a
+ * blob and hand it to the browser.
+ */
+export async function saveArtifact(url: string, filename: string, openInNewTab = false): Promise<void> {
+  const r = await api.get(url, { responseType: 'blob' });
+  const blobUrl = URL.createObjectURL(r.data as Blob);
+  if (openInNewTab) {
+    window.open(blobUrl, '_blank');
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } else {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
 }
 
 /** Turn any request failure into a sentence a workshop user can act on. */

@@ -1,0 +1,14 @@
+{
+  "name": "cutlist-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "sidecar:build": "powershell -ExecutionPolicy Bypass -File sidecar/build_sidecar.ps1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

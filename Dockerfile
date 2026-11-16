@@ -20,6 +20,11 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
+# API token is embedded into the SPA bundle at build time so the review UI
+# can call /api/* with Authorization headers. Pass via compose build args.
+ARG VITE_API_TOKEN=""
+ENV VITE_API_TOKEN=${VITE_API_TOKEN}
+
 COPY frontend/ ./
 RUN npm run build
 

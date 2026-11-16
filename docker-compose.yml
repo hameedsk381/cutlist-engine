@@ -1,6 +1,10 @@
 services:
   cutlist-engine:
-    build: .
+    build:
+      context: .
+      args:
+        # Embeds the API token into the SPA so downloads/auth work in the browser
+        VITE_API_TOKEN: ${CUTLIST_API_TOKEN:-}
     image: cutlist-engine:latest
     container_name: cutlist-engine
     restart: unless-stopped

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import SheetLayout from './SheetLayout';
 import { tidyName } from '../format';
+import { saveArtifact } from '../api';
 import type { FinalizeResult, ProcessResult, Sheet } from '../types';
 
 interface Props {
@@ -241,18 +242,26 @@ export default function Dashboard({ result, finalized, fromDescription, onBackTo
                   <ChevronRight size={20} />
                 </button>
                 {find('labels.html') && (
-                  <a className="dl" href={find('labels.html')!.url} target="_blank" rel="noreferrer">
+                  <button
+                    type="button"
+                    className="dl"
+                    onClick={() => saveArtifact(find('labels.html')!.url, 'labels.html', true)}
+                  >
                     <span className="dl-icon"><Tag size={20} /></span>
                     <span><strong>Part labels</strong><span>Stick one on each cut part</span></span>
                     <ChevronRight size={20} />
-                  </a>
+                  </button>
                 )}
                 {find('cutlist.csv') && (
-                  <a className="dl" href={find('cutlist.csv')!.url} download>
+                  <button
+                    type="button"
+                    className="dl"
+                    onClick={() => saveArtifact(find('cutlist.csv')!.url, 'cutlist.csv')}
+                  >
                     <span className="dl-icon"><FileText size={20} /></span>
                     <span><strong>Parts list for Excel</strong><span>CSV file</span></span>
                     <Download size={20} />
-                  </a>
+                  </button>
                 )}
               </div>
 
@@ -261,18 +270,18 @@ export default function Dashboard({ result, finalized, fromDescription, onBackTo
                   <summary><ChevronRight size={18} /> Files for a CNC machine</summary>
                   <div className="dl-list" style={{ marginTop: 8 }}>
                     {dxf.map((a, i) => (
-                      <a key={a.name} className="dl" href={a.url} download>
+                      <button key={a.url} type="button" className="dl" onClick={() => saveArtifact(a.url, a.name)}>
                         <span className="dl-icon"><Cpu size={20} /></span>
                         <span><strong>Sheet {i + 1} drawing</strong><span>DXF, opens in any CAM software</span></span>
                         <Download size={20} />
-                      </a>
+                      </button>
                     ))}
                     {gcode.map((a, i) => (
-                      <a key={a.name} className="dl" href={a.url} download>
+                      <button key={a.url} type="button" className="dl" onClick={() => saveArtifact(a.url, a.name)}>
                         <span className="dl-icon"><Cpu size={20} /></span>
                         <span><strong>Sheet {i + 1} G-code</strong><span>Test with an air cut before using</span></span>
                         <Download size={20} />
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </details>

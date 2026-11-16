@@ -24,27 +24,30 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-# Manual .env loading to avoid dependency on python-dotenv
-possible_env_paths = [
-    Path(__file__).resolve().parent / ".env",                # c:\...\src\cutlist_engine\.env
-    Path(__file__).resolve().parent.parent.parent / ".env",  # c:\...\.env
-]
-
+# Manual .env loading to avoid dependency on python-dotenv.
+# Set CUTLIST_NO_DOTENV=1 to disable (the desktop sidecar does this — the
+# local engine must not inherit a deployment's API token).
 env_loaded = False
-for env_path in possible_env_paths:
-    print(f"DEBUG: Looking for .env at {env_path}")
-    if env_path.exists():
-        print(f"DEBUG: .env found at {env_path}, loading...")
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.startswith("#"):
-                k, v = line.split("=", 1)
-                os.environ[k.strip()] = v.strip()
-                print(f"DEBUG: Loaded {k.strip()}")
-        env_loaded = True
-        break
+if os.environ.get("CUTLIST_NO_DOTENV") != "1":
+    possible_env_paths = [
+        Path(__file__).resolve().parent / ".env",                # c:\...\src\cutlist_engine\.env
+        Path(__file__).resolve().parent.parent.parent / ".env",  # c:\...\.env
+    ]
 
-if not env_loaded:
-    print("DEBUG: .env not found in any expected location")
+    for env_path in possible_env_paths:
+        print(f"DEBUG: Looking for .env at {env_path}")
+        if env_path.exists():
+            print(f"DEBUG: .env found at {env_path}, loading...")
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    os.environ[k.strip()] = v.strip()
+                    print(f"DEBUG: Loaded {k.strip()}")
+            env_loaded = True
+            break
+
+    if not env_loaded:
+        print("DEBUG: .env not found in any expected location")
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
