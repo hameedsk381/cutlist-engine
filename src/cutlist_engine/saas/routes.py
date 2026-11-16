@@ -18,6 +18,7 @@ from ..pipeline import ProcessConfig
 from . import emailer
 from .models import ApiKey, Job, OffcutStock, Project, User
 from .queue import enqueue
+from .quote import normalise_quote, quote_totals
 from .security import (
     create_access_token,
     generate_api_key,
@@ -213,7 +214,11 @@ def public_share(token: str, db: Session = Depends(get_db)):
             "<body style='font-family:sans-serif;text-align:center;padding:60px'>"
             f"<h2>{project.name}</h2><p>The cutting plan is still being prepared.</p></body>",
         )
-    return HTMLResponse(render_share_page(project.name, project.original_filename, project.created_at, summary))
+    quote = json.loads(project.config_json or "{}").get("quote")
+    return HTMLResponse(render_share_page(
+        project.name, project.original_filename, project.created_at, summary,
+        quote=quote_totals(summary, quote),
+    ))
 
 
 def _latest_done_job(project: Project, db: Session) -> Job | None:
@@ -336,8 +341,12 @@ def _project_payload(project: Project, db: Session, include_result: bool = False
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "job": _job_payload(job) if job else None,
     }
-    if include_result and job is not None and job.status == "done" and job.result_json:
-        payload["result"] = json.loads(job.result_json)
+    if include_result:
+        config = json.loads(project.config_json or "{}")
+        payload["settings"] = {"overrides": config.get("overrides") or {}, "quote": config.get("quote")}
+        if job is not None and job.status == "done" and job.result_json:
+            payload["result"] = json.loads(job.result_json)
+            payload["quote_totals"] = quote_totals(payload["result"], config.get("quote"))
     return payload
 
 
@@ -556,6 +565,73 @@ def list_projects(user: User = Depends(get_current_user), db: Session = Depends(
 def get_project(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = _owned_project(project_id, user, db)
     return _project_payload(project, db, include_result=True)
+
+
+_OVERRIDE_PRIORITIES = {"visible", "normal", "hidden"}
+
+
+def _clean_overrides(raw) -> dict:
+    """Validate per-part overrides sent by the web app. Raises ValueError."""
+    if not isinstance(raw, dict) or len(raw) > 5000:
+        raise ValueError("Part settings must be a list of parts (at most 5000).")
+    cleaned: dict = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"Settings for '{key}' are not valid.")
+        entry: dict = {}
+        if "edge_band" in value:
+            band = value["edge_band"]
+            if not isinstance(band, list) or len(band) != 4:
+                raise ValueError("Edge banding needs four values: top, right, bottom, left.")
+            try:
+                band = [float(v) for v in band]
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Edge banding thickness must be a number.") from exc
+            if any(v < 0 or v > 5 for v in band):
+                raise ValueError("Edge banding thickness must be between 0 and 5 mm.")
+            if any(band):
+                entry["edge_band"] = band
+        if "grain_locked" in value:
+            entry["grain_locked"] = bool(value["grain_locked"])
+        if value.get("priority") in _OVERRIDE_PRIORITIES:
+            entry["priority"] = value["priority"]
+        if isinstance(value.get("label"), str) and value["label"].strip():
+            entry["label"] = value["label"].strip()[:80]
+        if entry:
+            cleaned[str(key)[:200]] = entry
+    return cleaned
+
+
+@router.put("/api/projects/{project_id}/settings")
+def update_project_settings(
+    project_id: int, payload: dict,
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """Save per-part settings (edge banding, grain) and the client quote.
+
+    Changing part settings re-runs the plan, because banding changes cut
+    sizes. Changing only the quote does not.
+    """
+    project = _owned_project(project_id, user, db)
+    config = json.loads(project.config_json or "{}")
+    rerun = False
+    try:
+        if "overrides" in payload:
+            overrides = _clean_overrides(payload["overrides"])
+            if overrides != (config.get("overrides") or {}):
+                config["overrides"] = overrides
+                rerun = True
+        if "quote" in payload:
+            if payload["quote"] is None:
+                config.pop("quote", None)
+            else:
+                config["quote"] = normalise_quote(payload["quote"])
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    project.config_json = json.dumps(config)
+    db.commit()
+    job_id = enqueue(project.id).id if rerun else None
+    return {"project": _project_payload(project, db, include_result=True), "rerun": rerun, "job_id": job_id}
 
 
 @router.post("/api/projects/{project_id}/jobs", status_code=201)

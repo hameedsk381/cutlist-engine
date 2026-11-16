@@ -72,6 +72,8 @@ export interface CutlistItem {
   material: string;
   labels?: string[];
   board_ids?: string[];
+  finished_length?: number;
+  finished_width?: number;
 }
 
 export interface ExtractionReport {
@@ -120,6 +122,7 @@ export interface ProcessResult {
   model_fix_report?: ModelFixReport | null;
   sheet_size_options?: unknown[];
   rejected_boards?: string[];
+  edge_banding?: EdgeBandingSummary;
 }
 
 export interface ReviewDecisions {
@@ -172,6 +175,53 @@ export interface SaaSProject {
 
 export interface SaaSProjectDetail extends SaaSProject {
   result?: ProcessResult;
+  settings?: { overrides: PartOverrides; quote: QuoteInput | null };
+  quote_totals?: QuoteTotals | null;
+}
+
+export interface EdgeBandingSummary {
+  total_m: number;
+  by_thickness: { thickness: number; metres: number }[];
+  banded_parts: number;
+}
+
+/** Per-part settings keyed by board id. edge_band is [top, right, bottom, left] in mm. */
+export type PartOverrides = Record<string, { edge_band?: number[]; grain_locked?: boolean; label?: string }>;
+
+export interface QuoteInput {
+  labour: number;
+  hardware: number;
+  other: number;
+  edge_band_rate: number;
+  margin_percent: number;
+  customer: string;
+  note: string;
+}
+
+export interface QuoteTotals {
+  currency: string;
+  material: number;
+  edge_banding: number;
+  edge_banding_m: number;
+  labour: number;
+  hardware: number;
+  other: number;
+  subtotal: number;
+  margin: number;
+  total: number;
+  customer: string;
+  note: string;
+}
+
+export interface LinearPlan {
+  bars: { bar_id: number; stock_length: number; is_leftover: boolean; cuts: { label: string; length: number }[]; remaining: number }[];
+  new_bar_count: number;
+  leftover_bar_count: number;
+  total_piece_length: number;
+  total_stock_length: number;
+  waste_percent: number;
+  total_cost: number;
+  reusable_leftovers: number[];
 }
 
 export interface SaaSApiKey {

@@ -36,6 +36,7 @@ POLL_INTERVAL_SECONDS = 2.0
 def run_job(project: Project) -> dict:
     """Process a project's model and write all artifacts. Returns job payload."""
     config_kwargs = json.loads(project.config_json or "{}")
+    config_kwargs.pop("quote", None)  # pricing inputs, not engine settings
     config = ProcessConfig(**config_kwargs)
 
     triangles = load_model(Path(project.model_path))

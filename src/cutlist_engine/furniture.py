@@ -17,12 +17,18 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
-KINDS = ("wardrobe", "base_cabinet", "wall_cabinet", "loft", "bookshelf", "cabinet")
+KINDS = ("wardrobe", "tall_unit", "base_cabinet", "wall_cabinet", "loft", "bookshelf", "cabinet")
 
 SHELF_SETBACK = 20.0     # shelves stop this far behind the front edge
 DOOR_GAP = 3.0           # gap around and between shutters
 MAX_SHELF_SPAN = 900.0   # wider than this and a vertical partition is added
 DEFAULT_PLINTH = {"wardrobe": 75.0}
+
+SLIDE_CLEARANCE = 13.0     # per side, for side-mounted telescopic drawer channels
+CHANNEL_STEP = 50.0        # channels are sold in 50 mm length steps
+CHANNEL_MAX = 600.0
+INTERNAL_DRAWER_HEIGHT = 150.0
+DRAWER_SPACING = 30.0
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,7 @@ class FurnitureSpec:
     depth: float
     shelves: int = 0
     shutters: int = 0
+    drawers: int = 0
     partitions: int | None = None   # None = decide from MAX_SHELF_SPAN
     thickness: float = 18.0
     back_thickness: float = 6.0
@@ -56,6 +63,7 @@ class Part:
 _KIND_WORDS: tuple[tuple[str, str], ...] = (
     (r"wardrobe|almirah|almari|cupboard|closet", "wardrobe"),
     (r"loft", "loft"),
+    (r"tall\s*(unit|cabinet)|tallboy|pantry", "tall_unit"),
     (r"wall\s*(unit|cabinet)|overhead|upper\s*(unit|cabinet)", "wall_cabinet"),
     (r"base\s*(unit|cabinet)|kitchen\s*(base|unit|cabinet)|under\s*counter", "base_cabinet"),
     (r"book\s*shel(f|ves)|bookcase|shelf\s*unit|shelving|rack", "bookshelf"),
@@ -135,6 +143,7 @@ def parse_spec(
         "shelves": _find_count(text, r"shelf|shelves|racks?"),
         "shutters": _find_count(text, r"shutters?|doors?"),
         "partitions": _find_count(text, r"partitions?|dividers?|verticals?"),
+        "drawers": _find_count(text, r"drawers?"),
     }
     if re.search(r"\bopen\b|without (shutters?|doors?)", text):
         counts["shutters"] = 0
@@ -171,13 +180,14 @@ def parse_spec(
     elif skirting:
         plinth = float(skirting.group(1) or skirting.group(2))
 
+    drawers = counts["drawers"] or 0
     shutters = counts["shutters"]
     if shutters is None:
-        shutters = 0 if kind == "bookshelf" else (2 if found["width"] > 600 else 1)  # type: ignore[operator]
-        if shutters:
+        if kind == "bookshelf" or (kind == "base_cabinet" and drawers):
+            shutters = 0  # a drawer base unit has drawer fronts instead of shutters
+        else:
+            shutters = 2 if found["width"] > 600 else 1  # type: ignore[operator]
             notes.append(f"No shutter count given, so {shutters} {'was' if shutters == 1 else 'were'} assumed.")
-    if re.search(r"\bdrawers?\b", text):
-        notes.append("Drawers are not worked out yet. Add their parts by hand.")
 
     spec = FurnitureSpec(
         kind=kind,
@@ -186,6 +196,7 @@ def parse_spec(
         depth=float(found["depth"]),    # type: ignore[arg-type]
         shelves=counts["shelves"] or 0,
         shutters=shutters,
+        drawers=drawers,
         partitions=counts["partitions"],
         thickness=thickness,
         plinth=plinth,
@@ -210,8 +221,8 @@ def validate_spec(spec: FurnitureSpec) -> None:
         raise ValueError(f"Board thickness {t:g} mm does not look right.")
     if spec.height - spec.plinth - 2 * t < 100:
         raise ValueError("The skirting is too tall for this height.")
-    if spec.shelves > 40 or spec.shutters > 12 or (spec.partitions or 0) > 10:
-        raise ValueError("That is more shelves, shutters or partitions than we can lay out.")
+    if spec.shelves > 40 or spec.shutters > 12 or spec.drawers > 12 or (spec.partitions or 0) > 10:
+        raise ValueError("That is more shelves, shutters, drawers or partitions than we can lay out.")
 
 
 # ---------------------------------------------------------------------------
@@ -259,18 +270,70 @@ def build_parts(spec: FurnitureSpec) -> tuple[list[Part], tuple[str, ...]]:
         x = bay_x[i] + bay_w
         add("Partition" if partitions == 1 else f"Partition {i + 1}", x, 0, p + t, x + t, d - bt, h - t)
 
-    # Shelves are shared out across the bays, left to right, evenly spaced in height.
-    per_bay = [spec.shelves // bays + (1 if i < spec.shelves % bays else 0) for i in range(bays)]
+    # Drawers go in the first bay. A kitchen base unit with no shutters gets
+    # drawer fronts across the whole front; anywhere else they are internal
+    # drawers stacked from the bottom, behind the shutters.
+    external_drawers = spec.drawers > 0 and spec.kind == "base_cabinet" and spec.shutters == 0
+    drawer_stack = 0.0
+    if spec.drawers:
+        box_w = bay_w - 2 * SLIDE_CLEARANCE
+        front_y = 0.0 if external_drawers else SHELF_SETBACK
+        usable_depth = d - bt - (10.0 if external_drawers else SHELF_SETBACK)
+        box_d = min(CHANNEL_MAX, math.floor(usable_depth / CHANNEL_STEP) * CHANNEL_STEP)
+        if box_d < 250 or box_w - 2 * t < 100:
+            raise ValueError("This unit is too small for drawers.")
+        if external_drawers:
+            slot = (inner_h - 10) / spec.drawers
+            box_h = float(math.floor(min(200.0, slot - DRAWER_SPACING)))
+            front_h = math.floor((h - p - DOOR_GAP * (spec.drawers + 1)) / spec.drawers)
+            if box_h < 60 or front_h < 100:
+                raise ValueError("Too many drawers for this height.")
+            drawer_stack = inner_h  # the drawers fill this bay
+        else:
+            slot = INTERNAL_DRAWER_HEIGHT + DRAWER_SPACING
+            box_h = INTERNAL_DRAWER_HEIGHT
+            drawer_stack = spec.drawers * slot
+            if drawer_stack > inner_h - 100:
+                raise ValueError("Too many drawers for this height.")
+        x0 = bay_x[0] + SLIDE_CLEARANCE
+        for i in range(spec.drawers):
+            tag = "Drawer" if spec.drawers == 1 else f"Drawer {i + 1}"
+            z0 = p + t + 10 + i * slot
+            add(f"{tag} bottom", x0, front_y, z0, x0 + box_w, front_y + box_d, z0 + bt)
+            add(f"{tag} side L", x0, front_y, z0 + bt, x0 + t, front_y + box_d, z0 + bt + box_h)
+            add(f"{tag} side R", x0 + box_w - t, front_y, z0 + bt, x0 + box_w, front_y + box_d, z0 + bt + box_h)
+            add(f"{tag} box front", x0 + t, front_y, z0 + bt, x0 + box_w - t, front_y + t, z0 + bt + box_h)
+            add(f"{tag} box back", x0 + t, front_y + box_d - t, z0 + bt, x0 + box_w - t, front_y + box_d, z0 + bt + box_h)
+            if external_drawers:
+                fz = p + DOOR_GAP + i * (front_h + DOOR_GAP)
+                add(f"{tag} front", DOOR_GAP, -t - 2, fz, w - DOOR_GAP, -2, fz + front_h)
+        notes.append(
+            f"{spec.drawers} drawer box{'es' if spec.drawers > 1 else ''} {box_w:g} wide x {box_d:g} deep for "
+            f"side-mounted telescopic channels ({SLIDE_CLEARANCE:g} mm clearance each side), with a {bt:g} mm bottom fixed underneath."
+            + (" Drawer fronts cover the whole front." if external_drawers else " The drawers are internal, at the bottom of the first bay.")
+        )
+
+    # Shelves are shared out across the bays that have room, left to right,
+    # evenly spaced in the height above any drawers.
+    floor = [drawer_stack if i == 0 else 0.0 for i in range(bays)]
+    open_bays = [i for i in range(bays) if inner_h - floor[i] >= 150]
+    per_bay = [0] * bays
+    if spec.shelves and not open_bays:
+        notes.append("Shelves were left out because the drawers fill the unit.")
+    else:
+        for n in range(spec.shelves):
+            per_bay[open_bays[n % len(open_bays)]] += 1
     number = 0
+    shelf_total = sum(per_bay)
     for bay, count in enumerate(per_bay):
-        clear = inner_h - count * t
+        clear = inner_h - floor[bay] - count * t
         if count and clear / (count + 1) < 50:
             raise ValueError("Too many shelves for this height.")
         for k in range(count):
             number += 1
-            z = p + t + (k + 1) * clear / (count + 1) + k * t
+            z = p + t + floor[bay] + (k + 1) * clear / (count + 1) + k * t
             add(
-                "Shelf" if spec.shelves == 1 else f"Shelf {number}",
+                "Shelf" if shelf_total == 1 else f"Shelf {number}",
                 bay_x[bay], SHELF_SETBACK, z, bay_x[bay] + bay_w, d - bt, z + t,
             )
 
@@ -294,6 +357,26 @@ def build_parts(spec: FurnitureSpec) -> tuple[list[Part], tuple[str, ...]]:
     if p > 0:
         notes.append(f"{p:g} mm skirting under the bottom panel.")
     return parts, tuple(notes)
+
+
+def hardware_for(parts: list[Part]) -> list[dict[str, Any]]:
+    """Suggested hardware counts, read off the generated parts."""
+    hinges = 0
+    for part in parts:
+        if part.name.startswith("Shutter"):
+            height = part.length
+            hinges += 2 if height <= 900 else 3 if height <= 1600 else 4 if height <= 2100 else 5
+    channels: dict[float, int] = {}
+    for part in parts:
+        if part.name.endswith(" side L"):
+            depth = max(part.length, part.width)
+            channels[depth] = channels.get(depth, 0) + 1
+    items: list[dict[str, Any]] = []
+    if hinges:
+        items.append({"item": "Hinges", "quantity": hinges})
+    for depth, pairs in sorted(channels.items()):
+        items.append({"item": f"Drawer channels {depth:g} mm (pairs)", "quantity": pairs})
+    return items
 
 
 def to_obj(parts: list[Part], title: str = "furniture") -> str:
@@ -323,12 +406,17 @@ def describe_to_model(
     """Description -> {filename, obj, parts, notes, spec}. Raises ValueError on bad input."""
     spec = parse_spec(description, thickness=thickness, llm_extract=llm_extract)
     parts, notes = build_parts(spec)
+    hardware = hardware_for(parts)
     title = f"{spec.kind.replace('_', ' ').capitalize()} {spec.height:g} x {spec.width:g} x {spec.depth:g}"
     return {
         "filename": re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_") + ".obj",
         "title": title,
         "obj": to_obj(parts, title),
         "parts": [{"name": q.name, "length": q.length, "width": q.width, "thickness": q.thickness} for q in parts],
-        "notes": list(notes),
+        "notes": list(notes) + (
+            ["Suggested hardware: " + ", ".join(f"{h['quantity']} x {h['item']}" for h in hardware) + "."]
+            if hardware else []
+        ),
+        "hardware": hardware,
         "spec": {key: value for key, value in replace(spec, notes=()).__dict__.items() if key != "notes"},
     }

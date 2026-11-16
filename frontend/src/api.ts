@@ -1,3 +1,4 @@
+import type { LinearPlan, PartOverrides, QuoteInput } from './types';
 import axios from 'axios';
 import type {
   ExtractResult, FinalizeResult, ProcessResult, ReviewDecisions,
@@ -274,4 +275,16 @@ export async function deleteOffcut(id: number): Promise<void> {
 export async function saveProjectOffcuts(id: number): Promise<number> {
   const r = await api.post(`/api/projects/${id}/offcuts`);
   return r.data.saved as number;
+}
+
+export async function updateProjectSettings(
+  id: number, body: { overrides?: PartOverrides; quote?: QuoteInput | null },
+): Promise<{ project: SaaSProjectDetail; rerun: boolean; job_id: number | null }> {
+  const r = await api.put(`/api/projects/${id}/settings`, body);
+  return r.data;
+}
+
+export async function linearNest(payload: Record<string, unknown>): Promise<LinearPlan> {
+  const r = await api.post('/api/tools/linear', payload);
+  return r.data;
 }

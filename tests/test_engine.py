@@ -255,16 +255,16 @@ def test_per_part_overrides_set_grain_priority_material_via_source_object():
     assert board.edge_band == (2.0, 0.0, 2.0, 0.0)
 
 
-def test_edge_band_increases_cut_size_above_finished_size():
-    # Finished: 720x450. Bands: 2mm top + 2mm bottom = +4 length; 2 left + 2 right = +4 width.
+def test_edge_band_reduces_cut_size_below_finished_size():
+    # Finished: 720x450. Tape adds its thickness, so cut 4 mm short each way.
     triangles = rectangular_board(720, 450, 18)
     config = ProcessConfig(overrides={"panel_001": {"edge_band": [2, 2, 2, 2]}})
 
     result = process_triangles(triangles, config)
     board = result.boards[0]
 
-    assert board.length == 724
-    assert board.width == 454
+    assert board.length == 716
+    assert board.width == 446
     assert board.finished_length == 720
     assert board.finished_width == 450
 

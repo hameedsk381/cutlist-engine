@@ -359,23 +359,57 @@ def _apply_material_defaults(board: Board, materials: dict[str, MaterialSpec]) -
 
 
 def _apply_edge_band(board: Board) -> Board:
+    """Shrink the cut size so the part reaches its finished size after banding.
+
+    Edge banding is glued onto the cut edge and adds its own thickness, so a
+    600 mm finished panel with 2 mm tape on both ends is cut at 596 mm.
+    `edge_band` is (top, right, bottom, left) tape thickness in mm: top/bottom
+    are the two short edges (they change the length), left/right are the two
+    long edges (they change the width).
+    """
     top, right, bottom, left = board.edge_band
     if not any((top, right, bottom, left)):
         return board
-    # Convention: length runs along the part's "long" axis. Add band on both
-    # ends. The user supplies (top, right, bottom, left) on the FINISHED panel
-    # in its drawing orientation; we treat top/bottom as length-axis edges and
-    # left/right as width-axis edges.
-    length_band = top + bottom
-    width_band = left + right
+    cut_length = board.length - (top + bottom)
+    cut_width = board.width - (left + right)
+    if cut_length <= 0 or cut_width <= 0:
+        return board  # tape thicker than the part: leave the size alone
     return replace(
         board,
         finished_length=board.length,
         finished_width=board.width,
-        length=board.length + length_band,
-        width=board.width + width_band,
-        area=((board.length + length_band) * (board.width + width_band)) / 1_000_000.0,
+        length=cut_length,
+        width=cut_width,
+        area=(cut_length * cut_width) / 1_000_000.0,
     )
+
+
+def edge_banding_summary(boards: Iterable[Board]) -> dict[str, Any]:
+    """Metres of edge tape a job needs, in total and per tape thickness.
+
+    Lengths are net (the finished edge lengths). Workshops usually buy about
+    10 percent more to allow for trimming.
+    """
+    by_thickness: dict[float, float] = {}
+    banded_parts = 0
+    for board in boards:
+        top, right, bottom, left = board.edge_band
+        if not any((top, right, bottom, left)):
+            continue
+        banded_parts += 1
+        long_edge = board.finished_length or board.length
+        short_edge = board.finished_width or board.width
+        for thickness, edge in ((top, short_edge), (bottom, short_edge), (left, long_edge), (right, long_edge)):
+            if thickness > 0:
+                by_thickness[thickness] = by_thickness.get(thickness, 0.0) + edge
+    return {
+        "total_m": round(sum(by_thickness.values()) / 1000.0, 2),
+        "by_thickness": [
+            {"thickness": thickness, "metres": round(mm / 1000.0, 2)}
+            for thickness, mm in sorted(by_thickness.items())
+        ],
+        "banded_parts": banded_parts,
+    }
 
 
 def _apply_review(boards: list[Board], review: dict[str, ReviewDecision]) -> tuple[list[Board], list[Board]]:

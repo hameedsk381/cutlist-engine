@@ -557,3 +557,99 @@ def test_saas_routes_work_when_the_shared_token_is_set(client, monkeypatch):
     assert client.post("/api/tools/linear", json={"pieces": []}).status_code == 401
     # Legacy routes stay behind the shared token.
     assert client.post("/api/linear", json={"pieces": []}).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Edge banding settings and client quote
+# ---------------------------------------------------------------------------
+
+def _described_project(client, token):
+    r = client.post(
+        "/api/projects/describe",
+        data={"description": "Bookshelf 1800 high, 800 wide, 300 deep, 2 shelves", "sheet_cost": 3000},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201, r.text
+    project = r.json()["project"]
+    process_claimed_job(project["job"]["id"])
+    return client.get(f"/api/projects/{project['id']}", headers=_auth(token)).json()
+
+
+def test_edge_banding_setting_reruns_plan_and_reports_tape(client):
+    token = _signup(client, "banding@example.com")["token"]
+    body = _described_project(client, token)
+    side = next(b for b in body["result"]["boards"] if b["label"] == "Left side")
+    assert body["result"]["edge_banding"]["total_m"] == 0
+
+    # 2 mm tape on one long edge (the front) of the left side.
+    r = client.put(
+        f"/api/projects/{body['id']}/settings",
+        json={"overrides": {side["id"]: {"edge_band": [0, 0, 0, 2]}}},
+        headers=_auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rerun"] is True
+    process_claimed_job(r.json()["job_id"])
+
+    after = client.get(f"/api/projects/{body['id']}", headers=_auth(token)).json()
+    banded = next(b for b in after["result"]["boards"] if b["label"] == "Left side")
+    assert (banded["length"], banded["width"]) == (1800, 298)          # cut 2 mm narrower
+    assert (banded["finished_length"], banded["finished_width"]) == (1800, 300)
+    assert after["result"]["edge_banding"] == {
+        "total_m": 1.8, "by_thickness": [{"thickness": 2.0, "metres": 1.8}], "banded_parts": 1,
+    }
+    assert after["settings"]["overrides"] == {side["id"]: {"edge_band": [0.0, 0.0, 0.0, 2.0]}}
+
+    # Saving the same settings again does not queue another run.
+    again = client.put(
+        f"/api/projects/{body['id']}/settings",
+        json={"overrides": {side["id"]: {"edge_band": [0, 0, 0, 2]}}},
+        headers=_auth(token),
+    )
+    assert again.json()["rerun"] is False
+
+
+def test_bad_edge_banding_is_rejected(client):
+    token = _signup(client, "badband@example.com")["token"]
+    body = _described_project(client, token)
+
+    r = client.put(
+        f"/api/projects/{body['id']}/settings",
+        json={"overrides": {"panel_001": {"edge_band": [0, 0, 99, 0]}}},
+        headers=_auth(token),
+    )
+    assert r.status_code == 422 and "between 0 and 5" in r.json()["detail"]
+
+
+def test_quote_totals_and_share_page_hides_costs(client):
+    token = _signup(client, "quote@example.com")["token"]
+    body = _described_project(client, token)
+    material = body["result"]["material_summary"]["total_material_cost"]
+    assert material == 6000  # one 18 mm sheet and one 6 mm sheet for the back
+
+    r = client.put(
+        f"/api/projects/{body['id']}/settings",
+        json={"quote": {"labour": 2000, "hardware": 500, "margin_percent": 20, "customer": "Mrs Rao"}},
+        headers=_auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rerun"] is False
+    totals = r.json()["project"]["quote_totals"]
+    assert totals["subtotal"] == 8500 and totals["margin"] == 1700 and totals["total"] == 10200
+
+    share = client.post(f"/api/projects/{body['id']}/share", headers=_auth(token)).json()["share_url"]
+    page = client.get(share).text
+    assert "Quote total" in page and "10,200" in page and "Mrs Rao" in page
+    assert "Material cost" not in page and "6,000" not in page and "1,700" not in page
+
+    # Removing the quote brings the plain material view back.
+    client.put(f"/api/projects/{body['id']}/settings", json={"quote": None}, headers=_auth(token))
+    assert "Material cost" in client.get(share).text
+
+
+def test_quote_rejects_bad_margin(client):
+    token = _signup(client, "margin@example.com")["token"]
+    body = _described_project(client, token)
+
+    r = client.put(f"/api/projects/{body['id']}/settings", json={"quote": {"margin_percent": -5}}, headers=_auth(token))
+    assert r.status_code == 422

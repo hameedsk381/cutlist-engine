@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft, Check, Clock, Copy, FileText, FolderOpen, KeyRound,
-  LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Trash2, TriangleAlert,
+  LoaderCircle, LogOut, MailWarning, PackagePlus, Plus, RotateCcw, Share2, Trash2, TriangleAlert, Ruler,
 } from 'lucide-react';
 import UploadView from './UploadView';
 import Dashboard from './Dashboard';
+import LinearView from './LinearView';
+import { EdgeBandingCard, QuoteCard } from './PlanTools';
 import {
-  artifactDownloadUrl, createApiKey, createProject, createProjectFromDescription, deleteOffcut, friendlyError, getProject,
+  artifactDownloadUrl, createApiKey, createProject, createProjectFromDescription, deleteOffcut, updateProjectSettings, friendlyError, getProject,
   listApiKeys, listOffcuts, listProjects, rerunProject, resendVerification, revokeApiKey,
   saveProjectOffcuts, shareProject,
 } from '../api';
 import type {
   FinalizeResult, ProcessConfig, ProcessResult, SaaSApiKey, SaaSApiKeyCreated,
-  SaaSJob, SaaSOffcutList, SaaSProject, SaaSUser,
+  SaaSJob, SaaSOffcutList, SaaSProject, SaaSUser, PartOverrides, QuoteInput, QuoteTotals,
 } from '../types';
 
 interface Props {
@@ -20,7 +22,7 @@ interface Props {
   onSignOut: () => void;
 }
 
-type Stage = 'list' | 'new' | 'job' | 'dashboard';
+type Stage = 'list' | 'new' | 'job' | 'dashboard' | 'linear';
 
 const POLL_MS = 2500;
 
@@ -39,6 +41,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
   const [finalized, setFinalized] = useState<FinalizeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [quote, setQuote] = useState<QuoteInput | null>(null);
+  const [quoteTotals, setQuoteTotals] = useState<QuoteTotals | null>(null);
   const [loaded, setLoaded] = useState(false);
   const pollRef = useRef<number | null>(null);
 
@@ -89,6 +93,8 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       if (!detail.result) return;
       setActive({ id: detail.id, name: detail.name });
       setResult(detail.result);
+      setQuote(detail.settings?.quote ?? null);
+      setQuoteTotals(detail.quote_totals ?? null);
       setFinalized({
         gated: !!job?.gated,
         artifacts: (job?.artifacts ?? []).map((a) => ({
@@ -162,6 +168,44 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       } catch (err) {
         // Stay on the form so the description can be corrected.
         setError(friendlyError(err, 'We could not turn that description into parts. Give the height, width and depth in mm.'));
+      } finally {
+        setBusy(null);
+      }
+    })();
+  };
+
+  const handleApplyBanding = (overrides: PartOverrides) => {
+    if (!active) return;
+    setBusy('Updating the cutting plan…');
+    setError(null);
+    void (async () => {
+      try {
+        const r = await updateProjectSettings(active.id, { overrides });
+        if (r.rerun) {
+          setResult(null);
+          setFinalized(null);
+          setStage('job');
+          startPolling(active.id);
+        }
+      } catch (err) {
+        setError(friendlyError(err, 'Could not save the edge banding. Try again.'));
+      } finally {
+        setBusy(null);
+      }
+    })();
+  };
+
+  const handleSaveQuote = (next: QuoteInput | null) => {
+    if (!active) return;
+    setBusy('Saving the quote…');
+    setError(null);
+    void (async () => {
+      try {
+        const r = await updateProjectSettings(active.id, { quote: next });
+        setQuote(r.project.settings?.quote ?? null);
+        setQuoteTotals(r.project.quote_totals ?? null);
+      } catch (err) {
+        setError(friendlyError(err, 'Could not save the quote. Check the amounts and try again.'));
       } finally {
         setBusy(null);
       }
@@ -352,12 +396,20 @@ export default function ProjectsView({ user, onSignOut }: Props) {
           result={result}
           finalized={finalized}
           designNotes={designNotes}
+          tools={finalized?.gated ? undefined : (
+            <>
+              <EdgeBandingCard key={`band-${active.id}`} result={result} onApply={handleApplyBanding} busy={!!busy} />
+              <QuoteCard key={`quote-${active.id}`} result={result} saved={quote} totals={quoteTotals} onSave={handleSaveQuote} busy={!!busy} />
+            </>
+          )}
           onForce={() => handleRerun(active.id)}
           error={error}
         />
       </main>
     );
   }
+
+  if (stage === 'linear') return <LinearView onBack={backToList} />;
 
   // ---- list ----
   return (
@@ -370,6 +422,9 @@ export default function ProjectsView({ user, onSignOut }: Props) {
         <div className="spacer" />
         <button type="button" className="btn btn-ghost" onClick={onSignOut}>
           <LogOut size={18} /> Sign out
+        </button>
+        <button type="button" className="btn" onClick={() => setStage('linear')}>
+          <Ruler size={18} /> Cut lengths
         </button>
         <button type="button" className="btn btn-primary" onClick={startNewProject}>
           <Plus size={18} /> New project

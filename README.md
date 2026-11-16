@@ -163,9 +163,14 @@ Globally with `--grain-locked`, per-part via overrides, or per-material via
 so veneer / laminate runs preserve direction.
 
 ### Edge banding
-`edge_band: [top, right, bottom, left]` (mm) on the FINISHED panel. The engine
-adds the band thickness to the cut size so the saw produces a part that hits
-the finished dimension after banding.
+*Changed:* banding now **reduces** the cut size (a 600 mm finished panel with
+2 mm tape on both ends is cut at 596 mm). Earlier versions enlarged it, which
+produced oversize parts.
+
+`edge_band: [top, right, bottom, left]` (mm) on the FINISHED panel: top/bottom
+are the two short edges, left/right the two long edges. The engine takes the
+tape thickness off the cut size so the part hits the finished dimension after
+banding, and reports the metres of tape needed per thickness.
 
 ### Cost reporting & sheet-size simulation
 Pass alternative sheet sizes; the cheapest by total cost wins, and the comparison
@@ -211,8 +216,9 @@ pipeline as an upload: review, DXF, G-code, labels, share link.
 Every panel size is computed in code from fixed carcass rules in
 `furniture.py`, and the rules used are returned as `notes`. No language model
 does arithmetic. If `GROQ_API_KEY` is set, an LLM is used only as a fallback to
-read the overall size and counts out of unusual wording. Drawers are not
-worked out yet.
+read the overall size and counts out of unusual wording. Drawers are worked
+out as boxes for side-mounted telescopic channels, and hinge and channel
+counts are suggested.
 
 ## 1D nesting (timber, beading, pipe, profiles)
 
@@ -224,7 +230,15 @@ and saved leftovers:
   "stock_length": 3000, "kerf": 3, "leftovers": [800], "stock_cost": 250 }
 ```
 
-API only for now; there is no screen for it in the web app.
+In the web app it is the **Cut lengths** button on the projects page.
+
+## Edge banding and client quotes in the web app
+
+On a finished plan, **Edge banding** sets tape per part (front edge, both
+long edges, or all four) and re-runs the plan with the reduced cut sizes and
+a tape total. **Quote for your customer** adds labour, hardware, tape price
+and margin; the shared link then shows the quote total and hides your costs.
+Both are saved with `PUT /api/projects/{id}/settings`.
 
 ## Input formats
 

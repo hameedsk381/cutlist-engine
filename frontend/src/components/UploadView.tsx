@@ -156,7 +156,7 @@ export default function UploadView({
             </div>
             <div className="notice notice-info">
               <Info size={20} />
-              <div className="small">We work out every panel with fixed carcass rules and show you the rules used. You check the parts before anything is cut. Drawers are not worked out yet.</div>
+              <div className="small">We work out every panel with fixed carcass rules and show you the rules used. You check the parts before anything is cut.</div>
             </div>
           </section>
         )}

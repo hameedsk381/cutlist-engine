@@ -49,7 +49,9 @@ def _fmt_money(value: float | None, currency: str) -> str:
     return f"{currency} {value:,.0f}"
 
 
-def render_share_page(project_name: str, original_filename: str, created_at, summary: dict) -> str:
+def render_share_page(
+    project_name: str, original_filename: str, created_at, summary: dict, quote: dict | None = None,
+) -> str:
     """Public, printable HTML for one project's result summary."""
     e = html.escape
     material = summary.get("material_summary") or {}
@@ -87,6 +89,39 @@ def render_share_page(project_name: str, original_filename: str, created_at, sum
         for s in sheets
     )
 
+    if quote:
+        # A client sees the price, not the workshop's costs or margin.
+        price_card = (
+            f'<div class="card"><div class="k">Quote total</div>'
+            f'<div class="v num">{e(_fmt_money(quote.get("total"), quote.get("currency", currency)))}</div>'
+            f'<div class="s">material, edge banding, hardware and labour</div></div>'
+        )
+        quote_block = ""
+        if quote.get("customer") or quote.get("note"):
+            quote_block = (
+                "<section><h2>Quote</h2>"
+                + (f"<p><strong>For:</strong> {e(quote['customer'])}</p>" if quote.get("customer") else "")
+                + (f"<p>{e(quote['note'])}</p>" if quote.get("note") else "")
+                + "</section>"
+            )
+        cost_header = ""
+    else:
+        price_card = (
+            f'<div class="card"><div class="k">Material cost</div>'
+            f'<div class="v num">{e(_fmt_money(material.get("total_material_cost"), currency))}</div>'
+            f'<div class="s">at listed sheet prices</div></div>'
+        )
+        quote_block = ""
+        cost_header = "<th>Cost</th>"
+    if quote:
+        sheet_cards = "".join(
+            f"<tr><td>Sheet {e(str(s.get('sheet_id', '')))}</td>"
+            f"<td>{e(_n(s.get('width', '')))} × {e(_n(s.get('height', '')))} mm</td>"
+            f"<td>{e(str(len(s.get('parts', []))))}</td>"
+            f"<td class='num'>{_n(round(float(s.get('utilization_percent', 0) or 0), 1))}%</td></tr>"
+            for s in sheets
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -99,11 +134,12 @@ def render_share_page(project_name: str, original_filename: str, created_at, sum
 
 <div class="cards">
   <div class="card"><div class="k">Sheets to buy</div><div class="v num">{e(str(material.get("sheet_count", "—")))}</div><div class="s">18 mm plywood</div></div>
-  <div class="card"><div class="k">Material cost</div><div class="v num">{e(_fmt_money(material.get("total_material_cost"), currency))}</div><div class="s">at listed sheet prices</div></div>
+  {price_card}
   <div class="card"><div class="k">Wood used</div><div class="v num">{_n(round(float(material.get("utilization_percent", 0) or 0), 1))}%</div><div class="s">{_n(round(float(material.get("waste_percent", 0) or 0), 1))}% is left over</div></div>
-  <div class="card"><div class="k">Spare pieces worth keeping</div><div class="v num">{e(f"{(material.get('reusable_offcut_area') or 0) / 1000000:.1f}")} m²</div><div class="s">offcuts above 300 mm</div></div>
+  <div class="card"><div class="k">Spare pieces worth keeping</div><div class="v num">{e(f"{(material.get('reusable_offcut_area') or 0):.1f}")} m²</div><div class="s">offcuts above 300 mm</div></div>
 </div>
 
+{quote_block}
 <section>
   <h2>Parts list</h2>
   <table><thead><tr><th>Part</th><th>Size (L × W × T)</th><th>Qty</th><th>Material</th></tr></thead>
@@ -112,7 +148,7 @@ def render_share_page(project_name: str, original_filename: str, created_at, sum
 
 <section>
   <h2>Sheets</h2>
-  <table><thead><tr><th>Sheet</th><th>Size</th><th>Parts</th><th>Used</th><th>Cost</th></tr></thead>
+  <table><thead><tr><th>Sheet</th><th>Size</th><th>Parts</th><th>Used</th>{cost_header}</tr></thead>
   <tbody>{sheet_cards or "<tr><td colspan='5'>—</td></tr>"}</tbody></table>
 </section>
 

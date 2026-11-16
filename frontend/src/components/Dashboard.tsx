@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
   ArrowLeft, ChevronRight, CircleCheck, Cpu, Download, FileText, Lightbulb, Printer, Tag, TriangleAlert,
@@ -12,6 +13,8 @@ interface Props {
   result: ProcessResult;
   finalized: FinalizeResult | null;
   designNotes?: string[];
+  /** Extra cards (edge banding, quote) shown above the downloads. */
+  tools?: ReactNode;
   onBackToParts?: () => void;
   onForce: () => void;
   error: string | null;
@@ -31,7 +34,7 @@ function plain(issue: string): string | null {
   return issue;
 }
 
-export default function Dashboard({ result, finalized, designNotes = [], onBackToParts, onForce, error }: Props) {
+export default function Dashboard({ result, finalized, designNotes = [], tools, onBackToParts, onForce, error }: Props) {
   const [sheetIndex, setSheetIndex] = useState(0);
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
 
@@ -249,6 +252,7 @@ export default function Dashboard({ result, finalized, designNotes = [], onBackT
           </div>
 
           <aside className="stack no-print">
+            {tools}
             <section className="card" aria-label="Downloads">
               <div className="card-title"><h2>Take it to the workshop</h2></div>
               <div className="dl-list">

@@ -67,7 +67,7 @@ from .outputs import (
 )
 from .furniture import describe_to_model
 from .parsers import load_model
-from .pipeline import ProcessConfig, process_triangles
+from .pipeline import ProcessConfig, edge_banding_summary, process_triangles
 from . import ai as ai_module
 
 
@@ -702,6 +702,7 @@ def _serialize_result(result) -> dict[str, Any]:
         "model_fix_report": asdict(result.model_fix_report) if result.model_fix_report else None,
         "sheet_size_options": [asdict(o) for o in result.sheet_size_options],
         "rejected_boards": [b.id for b in result.rejected_boards],
+        "edge_banding": edge_banding_summary(result.boards),
     }
 
 
@@ -717,6 +718,8 @@ def _board_payload(board) -> dict[str, Any]:
         "priority": board.priority,
         "grain_locked": board.grain_locked,
         "edge_band": list(board.edge_band),
+        "finished_length": board.finished_length or board.length,
+        "finished_width": board.finished_width or board.width,
         "confidence": board.confidence,
         "source_objects": list(board.source_objects),
         "warnings": list(board.warnings),

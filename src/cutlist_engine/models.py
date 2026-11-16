@@ -118,8 +118,8 @@ class Board:
     """One of 'visible' (gets cleanest area / first placement), 'normal', 'hidden'."""
     edge_band: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     """Edge banding thickness in mm on (top, right, bottom, left) of the FINISHED panel.
-    The cut size is enlarged by these amounts so the saw produces a part that, after
-    banding, hits the finished dimension. Stored on the cut size."""
+    The cut size is reduced by these amounts so the part, once banded, reaches the
+    finished dimension. top/bottom are the short edges, left/right the long edges."""
     label: str = ""
     """Human-readable name shown on the layout / labels. Falls back to id when blank."""
     finished_length: float = 0.0

@@ -57,9 +57,10 @@ answer is CNC files, share links, offcut reuse and cost reports.
    saved project, share link. Nobody else does this.
    - Sizes are computed in code from fixed carcass rules; the rules used are
      shown to the user. No LLM arithmetic. Works with no AI key at all.
-   - Covers wardrobes, base/wall cabinets, lofts and bookshelves with shelves,
-     partitions, shutters and skirting. **Drawers are not built**, and there
-     is one joinery style (top and bottom between the sides, inset back).
+   - Covers wardrobes, tall units, base/wall cabinets, lofts and bookshelves
+     with shelves, partitions, shutters, skirting and drawers (boxes sized for
+     telescopic channels), plus suggested hinge and channel counts. There is
+     one joinery style (top and bottom between the sides, inset back).
    - Available in the web app, the SaaS API (`/api/projects/describe`) and
      with API keys.
 2. **Full output stack in one click** — *Shipped for 3D uploads.* CSV, DXF,
@@ -78,6 +79,12 @@ answer is CNC files, share links, offcut reuse and cost reports.
    Tauri desktop app in `desktop/`.
 6. **India-native** — *Shipped.* ₹ pricing, 8×4 / 7×4 / 6×4 ft sheet defaults,
    INR cost reports. Global tools are €/$ with no Indian market awareness.
+8. **Edge banding in the web app** — *Shipped.* Per-part tape choice, cut
+   sizes reduced by the tape thickness, and a tape total in metres. (An
+   earlier version enlarged the cut size instead; that was a bug and is fixed.)
+9. **Client quote** — *Shipped.* Labour, hardware, tape and margin on top of
+   material cost. The shared link shows the customer the total and hides the
+   workshop's costs and margin.
 7. **Offcut carry-over across projects** — *Shipped (M4, commit `7eb3ac7`).*
    Save leftover pieces, reserve them, and nest the next job on them before
    opening a new sheet. Matches CutPlan and cutlistlab; strong retention hook.
@@ -101,10 +108,9 @@ answer is CNC files, share links, offcut reuse and cost reports.
    the model to a hosted or self-hosted server with an API key. It has not
    been run inside SketchUp yet. Test it, package it as an `.rbz`, then list
    it in the SketchUp extension directory. OpenCutList's is GPL and well known.
-5. **1D/linear nesting** (lumber, pipe, bar) — *Partial.* Engine and
-   `POST /api/tools/linear` are shipped (kerf, end trim, saved leftovers, cost).
-   There is no screen for it in the web app yet. OptiCutter and Cutlistor
-   both ship it with UI.
+5. **1D/linear nesting** (lumber, pipe, bar) — *Shipped.* Engine,
+   `POST /api/tools/linear` and a "Cut lengths" screen (kerf, saved leftovers,
+   cost, printable bar diagrams).
 6. **"No upload" privacy** — StepNest processes in-browser via WASM. Counter
    with the self-host option and the desktop app; consider publishing that
    story loudly.
@@ -122,8 +128,9 @@ Global competitors charge $9–29/mo. For India anchor:
   higher job limit, priority queue, and whatever ships next (STEP import,
   true-shape nesting). Annual: ₹4,990 (~2 months free).
 - Positioning line: *"The only tool that turns a sentence or a 3D model
-  into CNC-ready files — free."* Now true for carcass furniture; say
-  "wardrobes, cabinets and shelves" until drawers are built.
+  into CNC-ready files — free."* True for carcass furniture (wardrobes,
+  cabinets, shelves, drawers). Note Flatma also does text to furniture, so
+  the claim rests on the CNC output, not on the idea.
 
 Risk to watch: CutList Optimizer's free cap (5/day) is its biggest complaint;
 our 50 jobs/mo is a deliberate wedge. Do not shrink it — it is the top of the
