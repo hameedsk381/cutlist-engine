@@ -111,10 +111,42 @@ app.add_middleware(
 )
 
 
+# What the pages may load. Scripts only from this site (the built app has no inline script);
+# styles may be inline because React and the sheet drawings set style attributes; fonts come
+# from Google Fonts. Nothing may embed the site except itself, and no plugins or <base> tricks.
+CONTENT_SECURITY_POLICY = "; ".join([
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:",
+    "connect-src 'self'",
+    "media-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+])
+
+
+def _csp_header() -> tuple[str, str] | None:
+    """CUTLIST_CSP: unset/on = enforce, report-only = log violations in the browser console
+    without blocking (use for a first deploy), off = send nothing, or a full policy string."""
+    setting = os.environ.get("CUTLIST_CSP", "").strip()
+    if setting.lower() == "off":
+        return None
+    if setting.lower() == "report-only":
+        return "Content-Security-Policy-Report-Only", CONTENT_SECURITY_POLICY
+    return "Content-Security-Policy", setting if setting and setting.lower() != "on" else CONTENT_SECURITY_POLICY
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     """Baseline browser protections on every response."""
     response = await call_next(request)
+    csp = _csp_header()
+    if csp:
+        response.headers.setdefault(*csp)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")

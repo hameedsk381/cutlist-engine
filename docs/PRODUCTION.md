@@ -42,6 +42,7 @@ No separate web server needed.
 | `CUTLIST_AI_SPEECH_MODEL` | `whisper-large-v3-turbo` | Speech-to-text model for voice notes. |
 | `CUTLIST_AI_DAILY_LIMIT` | `200` | AI calls per user per day. Held in memory per process, so it resets on restart and is not a billing meter. |
 | `CUTLIST_CORS_ORIGINS` | *(any)* | Browser origins allowed to call the API, comma separated. |
+| `CUTLIST_CSP` | *(enforce)* | `report-only`, `off`, or a full Content-Security-Policy string. |
 | `CUTLIST_RATE_LIMIT` | `on` | `off` disables sign-in and sign-up limits. |
 | `CUTLIST_TRUST_PROXY` | *(auto)* | `1` always read the client address from `X-Forwarded-For`, `0` never. |
 | `CUTLIST_APP_URL` | *(unset)* | **Set in production.** Public base URL used in verification and password-reset emails. |
@@ -131,8 +132,14 @@ list (for example `https://cutlist.example.com`).
   disables the limits. Add a proxy-level limit for anything stronger.
 - **Headers.** Every response carries `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy` and `Permissions-Policy`, and `Strict-Transport-Security` when the
-  request came over HTTPS (directly or via `X-Forwarded-Proto`). There is no
-  Content-Security-Policy yet.
+  request came over HTTPS (directly or via `X-Forwarded-Proto`).
+- **Content-Security-Policy.** Scripts only from this site, styles from this site, inline
+  and Google Fonts, fonts from Google Fonts, images from this site plus `data:` and `blob:`,
+  connections to this site only, no plugins, and no embedding by other sites. Set
+  `CUTLIST_CSP=report-only` on a first deploy to see violations in the browser console
+  without blocking anything, `off` to send nothing, or a full policy string to replace it.
+  If you add an analytics script, a map or another font host, add it to the policy
+  (`CONTENT_SECURITY_POLICY` in `server.py`) or the browser will block it.
 - **Password reset** needs working SMTP and `CUTLIST_APP_URL`: the emailed link is
   `CUTLIST_APP_URL/?reset=TOKEN`, valid for one hour and one use. Without SMTP the link
   is only written to the server log. Existing sign-in tokens stay valid for up to 7 days after a reset.

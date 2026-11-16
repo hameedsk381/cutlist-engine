@@ -143,3 +143,19 @@ def test_users_behind_a_proxy_are_counted_separately(monkeypatch):
     assert ratelimit.client_address(request("127.0.0.1", "203.0.113.7")) == "127.0.0.1"
     monkeypatch.setenv("CUTLIST_TRUST_PROXY", "1")
     assert ratelimit.client_address(request("8.8.8.8", "203.0.113.7")) == "203.0.113.7"
+
+
+def test_content_security_policy_is_sent_and_can_be_relaxed(client, monkeypatch):  # noqa: F811
+    policy = client.get("/healthz").headers["content-security-policy"]
+    assert "script-src 'self'" in policy and "object-src 'none'" in policy and "frame-ancestors 'self'" in policy
+    assert "unsafe-eval" not in policy and "script-src 'self' 'unsafe-inline'" not in policy
+
+    monkeypatch.setenv("CUTLIST_CSP", "report-only")
+    watched = client.get("/healthz").headers
+    assert "content-security-policy" not in watched and "content-security-policy-report-only" in watched
+
+    monkeypatch.setenv("CUTLIST_CSP", "off")
+    assert "content-security-policy" not in client.get("/healthz").headers
+
+    monkeypatch.setenv("CUTLIST_CSP", "default-src 'none'")
+    assert client.get("/healthz").headers["content-security-policy"] == "default-src 'none'"

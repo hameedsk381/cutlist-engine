@@ -38,6 +38,7 @@ services:
       CUTLIST_CORS_ORIGINS: ${CUTLIST_CORS_ORIGINS:-}
       CUTLIST_TRUST_PROXY: ${CUTLIST_TRUST_PROXY:-}
       CUTLIST_RATE_LIMIT: ${CUTLIST_RATE_LIMIT:-on}
+      CUTLIST_CSP: ${CUTLIST_CSP:-}
       # SaaS database (users, projects, jobs)
       CUTLIST_DATABASE_URL: postgresql+psycopg://cutlist:${POSTGRES_PASSWORD}@db:5432/cutlist
       CUTLIST_JWT_SECRET: ${CUTLIST_JWT_SECRET:?set CUTLIST_JWT_SECRET in .env}

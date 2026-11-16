@@ -32,7 +32,9 @@ Tick each line before you open sign-ups.
 
 ## Known gaps
 
-- No Content-Security-Policy header yet.
+- The Content-Security-Policy was checked on the plan, share, legal and upload pages without violations, but not
+  against Google Fonts loading from the live site or the voice and sketch buttons. After deploying, open the browser
+  console on each main screen; set `CUTLIST_CSP=report-only` if anything is blocked.
 - Sign-in tokens last 7 days and stay valid after a password reset.
 - Rate-limit counts are per process and reset on restart.
 - Grain and edge banding are not read from SketchUp; shaped boards are planned as full rectangles.
