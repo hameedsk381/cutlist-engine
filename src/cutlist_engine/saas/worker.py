@@ -93,6 +93,21 @@ def run_job(project: Project) -> dict:
     except Exception:
         summary["ai_advice"] = None
 
+    # A model with real problems gets them explained in plain words. The
+    # software's own wording is always in summary["model_problems"].
+    summary["model_advice"] = None
+    problems = summary.get("model_problems") or {}
+    if problems.get("severity") in ("medium", "high"):
+        try:
+            from .. import ai as ai_module
+            from ..modelcheck import problems_as_facts
+
+            summary["model_advice"] = ai_module.explain_model_problems(
+                problems_as_facts(problems, project.original_filename)
+            )
+        except Exception:
+            logger.exception("Could not explain the model problems")
+
     return {
         "gated": gated,
         "artifacts": artifacts,

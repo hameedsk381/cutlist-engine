@@ -132,11 +132,35 @@ export interface FinalizeResult {
   summary: ProcessResult;
 }
 
+/** A problem with the 3D model, found and measured by the software. */
+export interface ModelProblem {
+  code: string;
+  severity: 'low' | 'medium' | 'high';
+  title: string;
+  detail: string;
+  fix: string;
+}
+
+export interface ModelProblems {
+  severity: 'none' | 'low' | 'medium' | 'high';
+  items: ModelProblem[];
+}
+
+/** The same problems in plain words, written by AI from those facts. Null when AI was off or its answer was rejected. */
+export interface ModelAdvice {
+  headline: string;
+  explanation: string;
+  steps: string[];
+}
+
 export interface ProcessResult {
   boards: Board[];
   cutlist: CutlistItem[];
   sheets: Sheet[];
   ai_advice: string | null;
+  /** Missing on plans made before model checks existed. */
+  model_problems?: ModelProblems;
+  model_advice?: ModelAdvice | null;
   material_summary: MaterialSummary;
   extraction_report?: ExtractionReport;
   waste_optimization_report?: unknown;

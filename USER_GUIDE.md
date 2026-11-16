@@ -78,6 +78,12 @@ Use the main page for quick extraction and layout review.
 
 The quick page is best for estimates and fast visual checks. Use the operator review workflow before cutting real stock.
 
+### Problems with the 3D model
+
+When the model behind a plan has real problems, a warning card sits at the top of the plan page, before the numbers. The software measures each problem itself: parts bigger than the sheet, many solids that are not flat panels (handles, legs, decoration), too many different thicknesses, sheets that are mostly empty, many sizes rebuilt from loose faces, and a failed confidence check. Each comes with the numbers found and how to fix it.
+
+When AI is on, it also explains the problems in plain words and lists what to do in the 3D program. It is given only the measured facts, and any answer that contains a number not in those facts is thrown away, so you then see the software's own wording alone. With AI off you always see the software's wording. Parts with no names are mentioned under "Good to know" and do not trigger the card.
+
 ### Cutting order (panel saw)
 
 Under the sheet drawing, **Cutting order** lists the straight edge-to-edge saw cuts that turn each sheet into its parts, in the order to make them:

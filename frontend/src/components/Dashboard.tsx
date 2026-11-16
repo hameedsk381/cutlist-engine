@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import SheetLayout from './SheetLayout';
 import CutSteps from './CutSteps';
+import ModelProblemsCard from './ModelProblemsCard';
 import { tidyName } from '../format';
 import { saveArtifact } from '../api';
 import type { FinalizeResult, ProcessResult, Sheet } from '../types';
@@ -90,6 +91,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
           <p className="lead">{t('We stopped before making a plan, because the sizes we read may be wrong. Cutting from it could waste sheets.')}</p>
         </div>
         <div className="stack">
+          <ModelProblemsCard problems={result.model_problems} advice={result.model_advice} showItems={false} />
           <div className="notice notice-warn">
             <TriangleAlert size={22} />
             <div>
@@ -155,6 +157,7 @@ export default function Dashboard({ result, finalized, designNotes = [], tools, 
           </details>
         )}
         {error && <div className="notice notice-danger" role="alert"><TriangleAlert size={20} /><div>{error}</div></div>}
+        <ModelProblemsCard problems={result.model_problems} advice={result.model_advice} />
         {offcutSheets.length > 0 && (
           <div className="notice notice-info" role="status">
             <CircleCheck size={20} />

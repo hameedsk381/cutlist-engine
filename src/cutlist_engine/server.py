@@ -56,6 +56,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .cutsequence import cut_sequence
+from .modelcheck import find_problems
 from .dxf_export import write_sheets_dxf_zip
 from .gcode_export import GCodeConfig, write_sheets_gcode
 from .models import ReviewDecision
@@ -707,7 +708,7 @@ def _cleanup_expired_sessions(now: float | None = None) -> int:
 def _serialize_result(result) -> dict[str, Any]:
     boards = [_board_payload(b) for b in result.boards]
     boards_map = {b["id"]: b for b in boards}
-    return {
+    payload = {
         "boards": boards,
         "cutlist": [asdict(c) for c in result.cutlist],
         "sheets": [_sheet_payload(s, boards_map, getattr(result, "kerf", 3.0)) for s in result.sheets],
@@ -720,6 +721,8 @@ def _serialize_result(result) -> dict[str, Any]:
         "oversize_parts": [_board_payload(b) for b in result.oversize_boards],
         "edge_banding": edge_banding_summary(result.boards),
     }
+    payload["model_problems"] = find_problems(payload)
+    return payload
 
 
 def _board_payload(board) -> dict[str, Any]:

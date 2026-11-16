@@ -443,6 +443,68 @@ out new totals. No introduction and no closing line.
 """
 
 
+_EXPLAIN_SYSTEM = """\
+You help a furniture workshop in India whose cutting plan was made from a 3D
+model that has problems. FACTS lists the problems the software found by
+measuring the model. They are correct.
+
+Respond ONLY with a JSON object:
+{"headline": "<one sentence: what is wrong overall>",
+ "explanation": "<2 to 4 short sentences in plain words: what this means for
+  the plan and the money, and what is probably going on in the model>",
+ "steps": ["<a concrete thing to do in the 3D program, 2 to 4 of these>"]}
+
+Rules
+- Use only numbers that appear in FACTS. Never work out totals, percentages or
+  costs. If a number is not in FACTS, leave it out.
+- Say only what FACTS supports. Do not guess at causes FACTS does not hint at;
+  write "probably" when you infer.
+- The File line tells you the file type. If it is a SketchUp file or the
+  steps would differ by program, name the program only when you are sure.
+- Plain words, no jargon. The reader is a carpenter or a designer, not an
+  engineer.
+"""
+
+
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def explain_model_problems(facts: str) -> dict[str, Any] | None:
+    """The model's problems explained in plain words, or None.
+
+    None when AI is off, the call fails, the answer is malformed, or the answer
+    uses a number that is not in `facts`. The caller then shows the
+    software's own wording, which says the same thing.
+    """
+    if not llm_available() or not facts.strip():
+        return None
+    try:
+        content = _complete(
+            [
+                {"role": "system", "content": _EXPLAIN_SYSTEM},
+                {"role": "user", "content": f"FACTS\n{facts}"},
+            ],
+            json_mode=True,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+        data = _loads(content)
+    except (AIError, ValueError):
+        return None
+    headline = str(data.get("headline") or "").strip()
+    explanation = str(data.get("explanation") or "").strip()
+    steps = [str(s).strip() for s in (data.get("steps") or []) if str(s).strip()][:4]
+    if not headline or not explanation:
+        return None
+    allowed = set(_NUMBER.findall(facts))
+    said = set(_NUMBER.findall(" ".join([headline, explanation, *steps])))
+    invented = said - allowed
+    if invented:
+        logger.warning("AI model-problem answer used numbers not in the facts: %s", sorted(invented))
+        return None
+    return {"headline": headline[:240], "explanation": explanation[:900], "steps": [s[:240] for s in steps]}
+
+
 def suggest_improvements(context: dict[str, Any]) -> str | None:
     """Short tips for a finished plan, or None when AI is off or fails."""
     if not llm_available():
