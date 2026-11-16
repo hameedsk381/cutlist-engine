@@ -12,7 +12,21 @@ Copy `cutlist_engine_loader.rb` into your SketchUp Plugins folder:
 
 Restart SketchUp. A new menu appears under **Extensions -> Cutlist Engine**.
 
-## Use
+## Send straight to CutList (recommended)
+
+1. In the CutList web app, open **API keys** and create a key.
+2. In SketchUp, run **Extensions -> Cutlist Engine -> CutList connection...**
+   and enter your server address (for example `https://cutlist.example.com`, or
+   `http://localhost:8000` when self-hosting) and the API key.
+3. Run **Extensions -> Cutlist Engine -> Send to CutList**. The selection (or
+   the whole model if nothing is selected) is uploaded as a new project and
+   your browser opens on the project list.
+
+The key is stored in SketchUp's preferences on this computer. **Status: untested.** This path was written against the SketchUp Ruby API
+and Ruby's `net/http`, but it has not been run in SketchUp or in Ruby yet.
+Try it on a small model first.
+
+## Use offline with the CLI
 
 1. Model each plywood board as a **closed solid group** with the correct
    thickness (18 mm by default). Hide hardware, screws and decorative geometry.

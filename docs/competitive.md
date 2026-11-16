@@ -2,9 +2,13 @@
 
 *Researched 2026-11-16. Prices/features as reported by vendors and roundup articles at that date; verify before quoting externally.*
 
-CutList competes in three tiers. We sit in the gap between them: the only tool
-that goes **from a sentence or a 3D model straight to CNC-ready files**, as a
-multi-user SaaS, with a self-host option.
+*Our own claims were checked against the code on 2026-11-16, including the
+describe, glTF, 1D and SketchUp work done that day (uncommitted at time of writing). Each one below is marked **Shipped**, **Partial** or **Not built**.*
+
+CutList competes in three tiers. We sit in the gap between them: **3D model →
+reviewed cut list → CNC-ready files**, as a multi-user SaaS with a self-host
+option and offcut reuse. A sentence now takes the same route for carcass
+furniture (see win 1).
 
 ---
 
@@ -31,6 +35,11 @@ multi-user SaaS, with a self-host option.
 | **step2gcode** | STEP + DXF + SVG in one pass | G-code | Free but no SaaS features |
 | **Nestpact** | DXF + 3D solids | Nested DXF + G-code (laser/plasma/router) | Laser/plasma focused |
 | **j-phi cutlist** | Onshape / SketchUp | PDF; free, offline | Niche, no nesting API |
+| **OpenCutList** ⚠️ | Runs inside SketchUp (no export step) | Parts list + cutting diagrams; free, GPL | SketchUp only; no SaaS, sharing or G-code. *Not re-researched for this doc — confirm features before quoting.* |
+
+OpenCutList is the default choice for SketchUp users, who are our core
+audience. Any pitch to them has to answer "why not OpenCutList?" — today the
+answer is CNC files, share links, offcut reuse and cost reports.
 
 ## Tier 3 — Pro cabinet/CAD suites (ceiling, not peers)
 
@@ -42,47 +51,79 @@ multi-user SaaS, with a self-host option.
 
 ## Where CutList wins
 
-1. **Natural language → parts.** "Wardrobe 2100 high, 1200 wide, 2 shutters,
-   4 shelves" becomes a parts list. Nobody else does this — every competitor
-   requires a CAD model or manual entry. Lead the landing page with it.
-2. **Full output stack in one click** — CSV, DXF, G-code, labels, HTML sheet
-   layout. Most Tier-1 tools cannot write G-code at all.
-3. **Most generous free plan** — 50 jobs/mo, no part cap, all formats. vs
-   CutPlan's 30 calcs/mo and Cutlistor's 20 rows.
-4. **Only SaaS with share links + API keys.** No competitor has a public
-   client-facing quote page or programmatic access below $99/mo (OptiCutter's
-   API is €99/mo).
-5. **Self-hostable** (`docker compose up`) — unique in this space; answers the
-   "your files in someone's cloud" objection.
-6. **India-native** — ₹ pricing, 8×4 / 7×4 / 6×4 ft sheet defaults, INR cost
-   reports. Global tools are €/$ with no Indian market awareness.
+1. **Natural language → parts → CNC files.** — *Shipped (carcass furniture).*
+   "Wardrobe 2100 high, 1200 wide, 2 shutters, 4 shelves" becomes a real 3D
+   model that runs through the normal pipeline: review, DXF, G-code, labels,
+   saved project, share link. Nobody else does this.
+   - Sizes are computed in code from fixed carcass rules; the rules used are
+     shown to the user. No LLM arithmetic. Works with no AI key at all.
+   - Covers wardrobes, base/wall cabinets, lofts and bookshelves with shelves,
+     partitions, shutters and skirting. **Drawers are not built**, and there
+     is one joinery style (top and bottom between the sides, inset back).
+   - Available in the web app, the SaaS API (`/api/projects/describe`) and
+     with API keys.
+2. **Full output stack in one click** — *Shipped for 3D uploads.* CSV, DXF,
+   G-code, labels, HTML sheet layout. Most Tier-1 tools cannot write G-code at
+   all. Ours is one generic dialect with no tabs/bridges and no tool-diameter
+   setting, so it is weaker than StepNest's seven controller profiles.
+3. **Most generous free plan** — *Shipped.* 50 jobs/mo, no part cap, all
+   formats. vs CutPlan's 30 calcs/mo and Cutlistor's 20 rows. There is no paid
+   plan yet: the limit message says "upgrade to continue" with nothing to
+   upgrade to.
+4. **SaaS with share links + API keys** — *Shipped.* Public read-only quote
+   page and API keys on the free plan. No competitor has programmatic access
+   below $99/mo (OptiCutter's API is €99/mo).
+5. **Self-hostable** (`docker compose up`) — *Shipped.* Unique in this space;
+   answers the "your files in someone's cloud" objection. There is also a
+   Tauri desktop app in `desktop/`.
+6. **India-native** — *Shipped.* ₹ pricing, 8×4 / 7×4 / 6×4 ft sheet defaults,
+   INR cost reports. Global tools are €/$ with no Indian market awareness.
+7. **Offcut carry-over across projects** — *Shipped (M4, commit `7eb3ac7`).*
+   Save leftover pieces, reserve them, and nest the next job on them before
+   opening a new sheet. Matches CutPlan and cutlistlab; strong retention hook.
 
 ## Where we're behind (roadmap candidates)
 
-1. **1D/linear nesting** (lumber, pipe, bar) — OptiCutter and Cutlistor both
-   ship it. *Candidate for M4+.*
-2. **Offcut inventory across projects** — CutPlan and cutlistlab save remnant
-   sheets and reuse them next job. Ours reports reusable offcuts but does not
-   carry them forward. *High perceived value; strong retention hook.*
-3. **True-shape irregular nesting depth** — Cutlist Evolution nests curved
-   outlines natively. We support non-rectangular panels, but this is their
-   flagship story.
-4. **"No upload" privacy** — StepNest processes in-browser via WASM. Counter
-   with the self-host option; consider publishing that story loudly.
-5. **SketchUp extension awareness** — we have one in-repo; OpenCutList's is
-   GPL and well known. Publish and list ours in the SketchUp extension
-   directory.
+1. **Input formats** — *Partial.* glTF / GLB import is shipped alongside
+   OBJ, STL, DAE and mesh DXF. **STEP is not built**: it needs a CAD kernel
+   (OpenCascade) as a dependency, which is a packaging decision for the Docker
+   image and desktop app. STEP is what Fusion, SolidWorks and Onshape export,
+   so this is still the main Tier-2 gap.
+2. **True-shape nesting** — *Not built.* Shaped parts keep their real outline
+   in DXF and G-code, but nesting places every part by its bounding rectangle.
+   Cutlist Evolution nests curved outlines natively; this is their flagship
+   story and a real gap, not a matter of depth.
+3. **Part extraction accuracy** — *Shipped in code, unproven on real models.*
+   Per-part extraction (commit `84628cc`) reads touching parts and mixed
+   thicknesses correctly on synthetic cabinets. It has not been run on a
+   library of real SketchUp exports; do that before any accuracy claim.
+4. **SketchUp extension** — *Written, untested.* "Send to CutList" uploads
+   the model to a hosted or self-hosted server with an API key. It has not
+   been run inside SketchUp yet. Test it, package it as an `.rbz`, then list
+   it in the SketchUp extension directory. OpenCutList's is GPL and well known.
+5. **1D/linear nesting** (lumber, pipe, bar) — *Partial.* Engine and
+   `POST /api/tools/linear` are shipped (kerf, end trim, saved leftovers, cost).
+   There is no screen for it in the web app yet. OptiCutter and Cutlistor
+   both ship it with UI.
+6. **"No upload" privacy** — StepNest processes in-browser via WASM. Counter
+   with the self-host option and the desktop app; consider publishing that
+   story loudly.
 
-## Pricing anchor for M2 (Razorpay)
+## Pricing anchor (no payment code yet)
+
+There is no billing integration in the repo; `User.plan` exists but nothing
+sets it. The numbers below are a proposal, not a shipped plan.
 
 Global competitors charge $9–29/mo. For India anchor:
 
 - **Free** — 50 jobs/mo, unlimited parts, all formats (current).
-- **Pro** — **₹499/mo** (~$6) — undercuts CutPlan Pro ($29) by ~80% while
-  adding what none of them have: share links, API keys, G-code, priority
-  queue. Annual: ₹4,990 (~2 months free).
-- Positioning line: *"The only tool that turns a sentence or a 3D model into
-  CNC-ready files — free."*
+- **Pro** — **₹499/mo** (~$6) — undercuts CutPlan Pro ($29) by ~80%. Share
+  links, API keys and G-code are already free, so Pro needs its own reasons:
+  higher job limit, priority queue, and whatever ships next (STEP import,
+  true-shape nesting). Annual: ₹4,990 (~2 months free).
+- Positioning line: *"The only tool that turns a sentence or a 3D model
+  into CNC-ready files — free."* Now true for carcass furniture; say
+  "wardrobes, cabinets and shelves" until drawers are built.
 
 Risk to watch: CutList Optimizer's free cap (5/day) is its biggest complaint;
 our 50 jobs/mo is a deliberate wedge. Do not shrink it — it is the top of the

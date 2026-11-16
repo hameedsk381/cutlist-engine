@@ -2,7 +2,7 @@
 
 Three capabilities:
   1. label_parts()       — Auto-name boards from dimensions + source objects
-  2. describe_to_cutlist() — Natural language → structured cutlist JSON
+  2. extract_furniture_params() — Natural language → size/count parameters only
   3. chat()              — Context-aware workshop assistant
 """
 from __future__ import annotations
@@ -100,84 +100,44 @@ def label_parts(boards: list[dict[str, Any]]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# 2. Natural Language → Cutlist
+# 2. Natural Language -> furniture parameters (never panel sizes)
 # ---------------------------------------------------------------------------
 
-_DESCRIBE_SYSTEM = """\
-You are an expert in the Indian modular kitchen and wardrobe industry. The user will describe a piece of furniture
-in natural language. Convert it into a precise cutlist suitable for Indian manufacturing standards.
+_PARAMS_SYSTEM = """\
+You read a furniture description and extract its parameters. Do NOT calculate
+any panel sizes. Respond ONLY with a JSON object using these keys, omitting any
+the text does not state:
 
-Rules:
-- Calculate all panel dimensions using standard Indian joinery (e.g., 75mm skirting, 18mm plywood carcass, 6mm back panel).
-- Use metric (mm) for all dimensions.
-- Common items: Pooja Units, Modular Kitchen cabinets, Lofts, Wardrobe shutters with 2mm PVC edge banding.
-- Internal width = external width - (2 × side panel thickness)
-- Shelf depth is typically 20mm less than carcass depth.
-- Respond ONLY with a JSON object in this exact format:
+{"kind": "wardrobe|base_cabinet|wall_cabinet|loft|bookshelf|cabinet",
+ "height": <mm>, "width": <mm>, "depth": <mm>,
+ "shelves": <int>, "shutters": <int>, "partitions": <int>}
 
-{
-  "boards": [
-    {"label": "Shutter A", "length": 720, "width": 450, "thickness": 18, "quantity": 2, "grain_locked": true, "edge_band": [2,2,2,2], "material": "Plywood", "priority": "visible"},
-    ...
-  ],
-  "material_name": "18mm BWP Marine Plywood",
-  "sheet_width": 2440,
-  "sheet_height": 1220,
-  "currency": "INR",
-  "notes": "Brief design notes for Indian workshop standards"
-}
-
-- length = longest dimension, width = shortest dimension
-- All dimensions in mm
-- Respond with JSON only.
+Convert feet, inches and cm to mm. Respond with JSON only.
 """
 
 
-def describe_to_cutlist(
-    description: str,
-    thickness: float = 18.0,
-    sheet_width: float = 2440.0,
-    sheet_height: float = 1220.0,
-) -> dict[str, Any]:
-    """Convert a natural language furniture description to a structured cutlist.
+def extract_furniture_params(description: str) -> dict[str, Any]:
+    """Pull overall size and counts out of free text.
 
-    Returns:
-        dict with keys: boards, material_name, sheet_width, sheet_height, notes
+    Used only as a fallback when the rule-based parser in `furniture.py`
+    cannot find them. All panel arithmetic is done in code, not here.
     """
-    user_msg = (
-        f"Material thickness: {thickness}mm\n"
-        f"Sheet size: {sheet_width}×{sheet_height}mm\n\n"
-        f"Description:\n{description}"
+    resp = _client().chat.completions.create(
+        model=_MODEL_FAST,
+        messages=[
+            {"role": "system", "content": _PARAMS_SYSTEM},
+            {"role": "user", "content": description},
+        ],
+        temperature=0.0,
+        max_tokens=300,
+        response_format={"type": "json_object"},
     )
+    result = json.loads(resp.choices[0].message.content or "{}")
+    return result if isinstance(result, dict) else {}
 
-    try:
-        resp = _client().chat.completions.create(
-            model=_MODEL_FAST,
-            messages=[
-                {"role": "system", "content": _DESCRIBE_SYSTEM},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.3,
-            max_tokens=4096,
-            response_format={"type": "json_object"},
-        )
-        content = resp.choices[0].message.content or "{}"
-        result = json.loads(content)
 
-        # Validate minimal structure
-        if "boards" not in result or not isinstance(result["boards"], list):
-            raise ValueError("LLM response missing 'boards' array")
-        for board in result["boards"]:
-            if not all(k in board for k in ("label", "length", "width")):
-                raise ValueError(f"Board missing required fields: {board}")
-
-        return result
-    except json.JSONDecodeError as e:
-        logger.error("AI describe response was not valid JSON: %s", e)
-        raise ValueError(f"AI returned invalid JSON: {e}")
-    except Exception as e:
-        logger.error("AI describe failed: %s", e)
-        raise
+def llm_available() -> bool:
+    return bool(os.environ.get("GROQ_API_KEY"))
 
 
 # ---------------------------------------------------------------------------

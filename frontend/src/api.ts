@@ -96,8 +96,17 @@ export async function finalizeSession(
   return r.data;
 }
 
-export async function aiDescribe(description: string, config: Record<string, number>): Promise<ProcessResult> {
-  const r = await api.post('/api/ai/describe', { description, ...config });
+export interface DescribedModel {
+  filename: string;
+  title: string;
+  obj: string;
+  notes: string[];
+  parts: { name: string; length: number; width: number; thickness: number }[];
+}
+
+/** Description -> a real 3D model file. Sizes are computed on the server from carcass rules. */
+export async function describeToModel(description: string, thickness: number): Promise<DescribedModel> {
+  const r = await api.post('/api/describe', { description, thickness });
   return r.data;
 }
 
@@ -186,6 +195,17 @@ export async function createProject(
   if (useOffcuts) fd.append('use_offcuts', 'true');
   const r = await api.post('/api/projects', fd);
   return r.data.project as SaaSProject;
+}
+
+export async function createProjectFromDescription(
+  description: string, config: Record<string, unknown>, useOffcuts = false,
+): Promise<{ project: SaaSProject; notes: string[] }> {
+  const fd = new FormData();
+  fd.append('description', description);
+  Object.entries(config).forEach(([k, v]) => fd.append(k, String(v)));
+  if (useOffcuts) fd.append('use_offcuts', 'true');
+  const r = await api.post('/api/projects/describe', fd);
+  return { project: r.data.project as SaaSProject, notes: (r.data.notes || []) as string[] };
 }
 
 export async function listProjects(): Promise<SaaSProject[]> {

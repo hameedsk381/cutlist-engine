@@ -33,9 +33,13 @@ def load_model(path: Path) -> list[Triangle]:
         return load_stl(path)
     if suffix == ".json":
         return load_mesh_json(path)
+    if suffix in {".glb", ".gltf"}:
+        from .gltf import load_gltf
+
+        return load_gltf(path)
     if suffix == ".dae":
         return load_dae(path)
-    raise ValueError(f"Unsupported input format '{path.suffix}'. Supported formats: .json, .dxf, .obj, .stl, .dae")
+    raise ValueError(f"Unsupported input format '{path.suffix}'. Supported formats: .obj, .dae, .glb, .gltf, .stl, .dxf, .json")
 
 
 def load_dxf(path: Path) -> list[Triangle]:

@@ -201,9 +201,35 @@ LibreCAD, VCarve, Aspire, EnRoute and any CAM nesting tool:
 `sketchup_plugin/cutlist_engine_loader.rb` adds an Extensions menu that
 exports the active selection to OBJ (mm units) and runs the CLI.
 
+## Describe it instead of drawing it
+
+`POST /api/describe` (and `POST /api/projects/describe` for signed-in users and
+API keys) turns a sentence such as *"Wardrobe 2100 high, 1200 wide, 600 deep,
+2 shutters, 4 shelves"* into a real 3D model, which then runs through the same
+pipeline as an upload: review, DXF, G-code, labels, share link.
+
+Every panel size is computed in code from fixed carcass rules in
+`furniture.py`, and the rules used are returned as `notes`. No language model
+does arithmetic. If `GROQ_API_KEY` is set, an LLM is used only as a fallback to
+read the overall size and counts out of unusual wording. Drawers are not
+worked out yet.
+
+## 1D nesting (timber, beading, pipe, profiles)
+
+`POST /api/tools/linear` (signed-in users and API keys; `/api/linear` on a single-operator install) packs a list of lengths onto stock bars with kerf, end trim
+and saved leftovers:
+
+```json
+{ "pieces": [{ "label": "rail", "length": 1000, "quantity": 3 }],
+  "stock_length": 3000, "kerf": 3, "leftovers": [800], "stock_cost": 250 }
+```
+
+API only for now; there is no screen for it in the web app.
+
 ## Input formats
 
 - `OBJ`, `STL` (binary + ASCII), `DAE` (Collada with node names + transforms)
+- `GLB` / self-contained `glTF` 2.0 (node names + transforms; metres converted to mm)
 - `DXF` (3DFACE, MESH and POLYFACE MESH entities, optional via `pip install -e .[cad]`)
 - mesh `JSON` for tests and integrations:
   ```json

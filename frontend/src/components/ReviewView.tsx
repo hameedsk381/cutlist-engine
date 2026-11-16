@@ -11,6 +11,7 @@ interface Props {
   onContinue: () => void;
   error: string | null;
   busy: boolean;
+  designNotes?: string[];
 }
 
 /** Engine warnings rewritten in workshop language. `check` means look before cutting. */
@@ -48,7 +49,7 @@ function Thumb({ board }: { board: Board }) {
   );
 }
 
-export default function ReviewView({ data, config, decisions, onChange, onContinue, error, busy }: Props) {
+export default function ReviewView({ data, config, decisions, onChange, onContinue, error, busy, designNotes = [] }: Props) {
   const [query, setQuery] = useState('');
 
   const annotated = useMemo(
@@ -110,6 +111,16 @@ export default function ReviewView({ data, config, decisions, onChange, onContin
       </div>
 
       <div className="stack">
+        {designNotes.length > 0 && (
+          <div className="notice notice-info">
+            <Info size={22} />
+            <div>
+              <strong>How these sizes were worked out</strong>
+              <ul>{designNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            </div>
+          </div>
+        )}
+
         {toCheck.length === 0 ? (
           <div className="notice notice-ok"><CircleCheck size={22} /><div><strong>Every part was measured cleanly.</strong> A quick look at the sizes is still a good idea.</div></div>
         ) : (

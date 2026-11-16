@@ -8,7 +8,7 @@ const FEATURES = [
   {
     icon: Box,
     title: 'Upload any 3D model',
-    body: 'OBJ, DAE, STL or DXF from SketchUp, Fusion 360, Blender or AutoCAD. Or just type the sizes.',
+    body: 'OBJ, DAE, GLB, STL or DXF from SketchUp, Fusion 360, Blender or AutoCAD. Or just type the sizes.',
   },
   {
     icon: Ruler,

@@ -22,6 +22,7 @@ Use millimeter-scale geometry.
 - `.obj`: common SketchUp, Blender, Rhino, Fusion export.
 - `.stl`: ASCII or binary mesh.
 - `.dae`: Collada with node names and transforms.
+- `.glb` / `.gltf`: glTF 2.0 (export as a single `.glb`; a `.gltf` with a separate `.bin` is not accepted).
 - `.dxf`: 3DFACE, MESH, and POLYFACE MESH entities.
 - `.json`: mesh triangle format for integrations and tests.
 

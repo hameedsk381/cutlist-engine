@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { ArrowRight, Box, ChevronRight, CircleCheck, PenLine, TriangleAlert, Upload, X } from 'lucide-react';
+import { ArrowRight, Info, Box, ChevronRight, CircleCheck, PenLine, TriangleAlert, Upload, X } from 'lucide-react';
 import type { ProcessConfig } from '../types';
 
 interface Props {
@@ -20,7 +20,7 @@ const SHEETS = [
   { label: '6 × 4 ft', w: 1830, h: 1220 },
 ];
 const THICKNESSES = [6, 12, 18, 25];
-const ACCEPT = '.obj,.dae,.stl,.dxf,.json';
+const ACCEPT = '.obj,.dae,.glb,.gltf,.stl,.dxf,.json';
 const EXAMPLES = [
   'Wardrobe 2100 high, 1200 wide, 600 deep, 2 shutters, 4 shelves',
   'Kitchen base unit 720 high, 600 wide, 560 deep, 1 shelf, 1 shutter',
@@ -55,7 +55,7 @@ export default function UploadView({
     const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
     if (!ACCEPT.split(',').includes(ext)) {
       setFile(null);
-      setFileError(`"${f.name}" is not a 3D file we can read. Export your design as OBJ, DAE, STL or DXF.`);
+      setFileError(`"${f.name}" is not a 3D file we can read. Export your design as OBJ, DAE, GLB, STL or DXF.`);
       return;
     }
     setFileError(null);
@@ -119,7 +119,7 @@ export default function UploadView({
               >
                 <span className="dropzone-icon"><Upload size={28} /></span>
                 <strong style={{ fontSize: 18 }}>Choose your 3D file</strong>
-                <span className="muted">or drag it here · OBJ, DAE, STL or DXF</span>
+                <span className="muted">or drag it here · OBJ, DAE, GLB, STL or DXF</span>
               </button>
             )}
             {fileError && (
@@ -154,9 +154,9 @@ export default function UploadView({
                 </button>
               ))}
             </div>
-            <div className="notice notice-warn">
-              <TriangleAlert size={20} />
-              <div className="small">Part sizes here are an estimate made by AI. Check every size before you cut.</div>
+            <div className="notice notice-info">
+              <Info size={20} />
+              <div className="small">We work out every panel with fixed carcass rules and show you the rules used. You check the parts before anything is cut. Drawers are not worked out yet.</div>
             </div>
           </section>
         )}

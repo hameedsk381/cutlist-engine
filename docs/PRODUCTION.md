@@ -36,7 +36,7 @@ No separate web server needed.
 | Variable | Default | Purpose |
 |---|---|---|
 | `CUTLIST_API_TOKEN` | *(unset)* | **Set in production.** All `/api/*` routes then require `Authorization: Bearer <token>`. `/healthz` and static SPA stay open. |
-| `GROQ_API_KEY` | *(unset)* | Enables `/api/ai/*` (part naming, describe→cutlist, chat). Optional. |
+| `GROQ_API_KEY` | *(unset)* | Enables `/api/ai/*` (part naming, chat) and the fallback that reads sizes out of unusual wording in describe. Optional: describe works without it. |
 | `CUTLIST_MAX_UPLOAD_MB` | `100` | Rejects uploads above this size. |
 | `CUTLIST_MAX_TRIANGLES` | `500000` | Rejects geometry too expensive to process. |
 | `CUTLIST_SESSION_TTL_HOURS` | `168` | Stale session folders are cleaned on startup. |

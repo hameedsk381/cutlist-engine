@@ -8,7 +8,7 @@ import AuthView from './components/AuthView';
 import LandingView from './components/LandingView';
 import ProjectsView from './components/ProjectsView';
 import {
-  aiDescribe, clearSaasToken, extractBoards, finalizeSession, friendlyError, getSaasToken, saasMe,
+  clearSaasToken, describeToModel, extractBoards, finalizeSession, friendlyError, getSaasToken, saasMe,
 } from './api';
 import type {
   AppView, ExtractResult, FinalizeResult, ProcessConfig, ProcessResult, ReviewDecisions, SaaSUser,
@@ -24,6 +24,7 @@ export default function App() {
   const [view, setView] = useState<AppView>('upload');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [designNotes, setDesignNotes] = useState<string[]>([]);
 
   // SaaS session: 'unknown' while we check for a stored token on load.
   const [authState, setAuthState] = useState<'unknown' | 'anon' | 'auth' | 'saas' | 'legacy'>('unknown');
@@ -53,7 +54,8 @@ export default function App() {
   const [finalized, setFinalized] = useState<FinalizeResult | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
-  const handleUpload = async (file: File, cfg: ProcessConfig) => {
+  const handleUpload = async (file: File, cfg: ProcessConfig, described = false) => {
+    if (!described) setDesignNotes([]);
     setBusy('Reading your design and finding the parts…');
     setError(null);
     try {
@@ -72,7 +74,7 @@ export default function App() {
       setFinalized(null);
       setView('review');
     } catch (err) {
-      setError(friendlyError(err, 'We could not read that file. Check it is a 3D export (OBJ, DAE, STL or DXF) and try again.'));
+      setError(friendlyError(err, 'We could not read that file. Check it is a 3D export (OBJ, DAE, GLB, STL or DXF) and try again.'));
     } finally {
       setBusy(null);
     }
@@ -82,19 +84,14 @@ export default function App() {
     setBusy('Working out the parts from your description…');
     setError(null);
     try {
-      const data = await aiDescribe(description, {
-        thickness: cfg.thickness, sheet_width: cfg.sheet_width, sheet_height: cfg.sheet_height, kerf: cfg.kerf,
-      });
-      setConfig(cfg);
-      setExtractData(null);
-      setSessionId('');
-      setResult(data);
-      setFinalized(null);
-      setView('dashboard');
+      // The server turns the description into a real 3D model; from here it is
+      // handled exactly like an uploaded file, so it gets review and CNC files.
+      const model = await describeToModel(description, cfg.thickness);
+      setDesignNotes(model.notes);
+      await handleUpload(new File([model.obj], model.filename, { type: 'text/plain' }), cfg, true);
     } catch (err) {
-      setError(friendlyError(err, 'We could not turn that description into parts. Try adding the overall width, height and depth.'));
-    } finally {
       setBusy(null);
+      setError(friendlyError(err, 'We could not turn that description into parts. Give the height, width and depth in mm.'));
     }
   };
 
@@ -253,6 +250,7 @@ export default function App() {
           decisions={decisions}
           onChange={setDecisions}
           onContinue={() => handleFinalize(false)}
+          designNotes={designNotes}
           error={error}
           busy={!!busy}
         />
@@ -262,7 +260,7 @@ export default function App() {
         <Dashboard
           result={result}
           finalized={finalized}
-          fromDescription={!extractData}
+          designNotes={designNotes}
           onBackToParts={extractData ? () => setView('review') : undefined}
           onForce={() => handleFinalize(true)}
           error={error}

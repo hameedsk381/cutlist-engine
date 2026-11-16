@@ -6,7 +6,7 @@ import {
 import UploadView from './UploadView';
 import Dashboard from './Dashboard';
 import {
-  artifactDownloadUrl, createApiKey, createProject, deleteOffcut, friendlyError, getProject,
+  artifactDownloadUrl, createApiKey, createProject, createProjectFromDescription, deleteOffcut, friendlyError, getProject,
   listApiKeys, listOffcuts, listProjects, rerunProject, resendVerification, revokeApiKey,
   saveProjectOffcuts, shareProject,
 } from '../api';
@@ -126,7 +126,10 @@ export default function ProjectsView({ user, onSignOut }: Props) {
     }, POLL_MS);
   }, [openDashboard, refreshList, stopPolling]);
 
+  const [designNotes, setDesignNotes] = useState<string[]>([]);
+
   const handleNewProject = (file: File, cfg: ProcessConfig) => {
+    setDesignNotes([]);
     setBusy('Uploading your design…');
     setError(null);
     void (async () => {
@@ -139,6 +142,26 @@ export default function ProjectsView({ user, onSignOut }: Props) {
       } catch (err) {
         setError(friendlyError(err, 'We could not process that file. Try again.'));
         setStage('list');
+      } finally {
+        setBusy(null);
+      }
+    })();
+  };
+
+  const handleDescribeProject = (description: string, cfg: ProcessConfig) => {
+    setBusy('Working out the parts from your description…');
+    setError(null);
+    void (async () => {
+      try {
+        const { project, notes } = await createProjectFromDescription(description, { ...cfg }, useOffcuts);
+        setUseOffcuts(false);
+        setDesignNotes(notes);
+        setActive({ id: project.id, name: project.name });
+        setStage('job');
+        startPolling(project.id);
+      } catch (err) {
+        // Stay on the form so the description can be corrected.
+        setError(friendlyError(err, 'We could not turn that description into parts. Give the height, width and depth in mm.'));
       } finally {
         setBusy(null);
       }
@@ -281,7 +304,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
         </button>
         <UploadView
           onUploadFile={handleNewProject}
-          onDescribe={() => { /* AI describe is part of the legacy flow for now */ }}
+          onDescribe={handleDescribeProject}
           error={error}
           busy={!!busy}
           offcutShelf={shelf && shelf.count > 0 ? { count: shelf.count, totalAreaM2: shelf.total_area_m2 } : undefined}
@@ -328,7 +351,7 @@ export default function ProjectsView({ user, onSignOut }: Props) {
         <Dashboard
           result={result}
           finalized={finalized}
-          fromDescription={false}
+          designNotes={designNotes}
           onForce={() => handleRerun(active.id)}
           error={error}
         />

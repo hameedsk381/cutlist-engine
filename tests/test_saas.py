@@ -471,3 +471,89 @@ def test_offcut_released_when_job_fails(client):
     # and the shelf shows them again
     listed = client.get("/api/offcuts", headers=_auth(token)).json()
     assert listed["count"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Describe -> project (sizes computed in code, full CNC outputs)
+# ---------------------------------------------------------------------------
+
+def test_described_project_gets_cnc_files_and_exact_parts(client):
+    token = _signup(client, "describe@example.com")["token"]
+
+    r = client.post(
+        "/api/projects/describe",
+        data={"description": "Wardrobe 2100 high, 1200 wide, 600 deep, 2 shutters, 4 shelves"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201, r.text
+    created = r.json()
+    assert created["project"]["name"] == "Wardrobe 2100 x 1200 x 600"
+    assert len(created["parts"]) == 13
+    assert created["notes"]
+
+    process_claimed_job(created["project"]["job"]["id"])
+
+    body = client.get(f"/api/projects/{created['project']['id']}", headers=_auth(token)).json()
+    assert body["job"]["status"] == "done", body["job"].get("error")
+    assert body["job"]["gated"] is False
+    names = [a["name"] for a in body["job"]["artifacts"]]
+    assert "cutlist.csv" in names and "labels.html" in names
+    assert any(n.startswith("dxf/") for n in names)
+    assert any(n.startswith("gcode/") for n in names)
+
+    planned = sorted((p["length"], p["width"], p["thickness"]) for p in created["parts"])
+    cut = sorted((b["length"], b["width"], b["thickness"]) for b in body["result"]["boards"])
+    assert cut == planned
+
+
+def test_describe_without_sizes_is_rejected_and_leaves_no_project(client):
+    token = _signup(client, "vague@example.com")["token"]
+
+    r = client.post("/api/projects/describe", data={"description": "a nice wardrobe"}, headers=_auth(token))
+
+    assert r.status_code == 422
+    assert "height" in r.json()["detail"]
+    assert client.get("/api/projects", headers=_auth(token)).json() == []
+
+
+def test_legacy_describe_returns_a_model_file(client):
+    r = client.post("/api/describe", json={"description": "bookshelf 1800 high 800 wide 300 deep 5 shelves"})
+
+    assert r.status_code == 200, r.text
+    model = r.json()
+    assert model["filename"].endswith(".obj")
+    assert model["obj"].count("\no ") == len(model["parts"])
+
+
+def test_linear_nesting_endpoint(client):
+    r = client.post("/api/linear", json={
+        "pieces": [{"label": "rail", "length": 1000, "quantity": 3}],
+        "stock_length": 3000, "kerf": 3, "stock_cost": 250,
+    })
+
+    assert r.status_code == 200, r.text
+    plan = r.json()
+    assert plan["new_bar_count"] == 2 and plan["total_cost"] == 500
+    assert plan["bars"][0]["cuts"][0] == {"label": "rail", "length": 1000.0}
+
+    too_long = client.post("/api/linear", json={"pieces": [{"label": "x", "length": 5000}], "stock_length": 3000})
+    assert too_long.status_code == 422 and "'x'" in too_long.json()["detail"]
+
+
+def test_saas_routes_work_when_the_shared_token_is_set(client, monkeypatch):
+    """Offcuts and tools authenticate per user, so the legacy shared token must not block them."""
+    import cutlist_engine.server as server
+
+    monkeypatch.setattr(server, "API_TOKEN", "workshop-secret")
+    token = _signup(client, "tools@example.com")["token"]
+
+    assert client.get("/api/offcuts", headers=_auth(token)).status_code == 200
+    r = client.post(
+        "/api/tools/linear",
+        json={"pieces": [{"label": "rail", "length": 1000, "quantity": 3}], "stock_length": 3000},
+        headers=_auth(token),
+    )
+    assert r.status_code == 200 and r.json()["new_bar_count"] == 2
+    assert client.post("/api/tools/linear", json={"pieces": []}).status_code == 401
+    # Legacy routes stay behind the shared token.
+    assert client.post("/api/linear", json={"pieces": []}).status_code == 401

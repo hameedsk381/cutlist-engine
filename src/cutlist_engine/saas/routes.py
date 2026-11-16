@@ -366,23 +366,14 @@ def _owned_project(project_id: int, user: User, db: Session) -> Project:
     return project
 
 
-@router.post("/api/projects", status_code=201)
-async def create_project(
-    file: UploadFile = File(...),
-    name: str = Form("Untitled project"),
-    sheet_width: float = Form(2440.0),
-    sheet_height: float = Form(1220.0),
-    thickness: float = Form(18.0),
-    kerf: float = Form(3.0),
-    min_part_length: float = Form(50.0),
-    min_part_width: float = Form(50.0),
-    min_confidence: float = Form(0.6),
-    sheet_cost: float = Form(3500.0),
-    currency: str = Form("INR"),
-    use_offcuts: bool = Form(False),
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def _create_project_from_content(
+    filename: str, content: bytes, name: str,
+    sheet_width: float, sheet_height: float, thickness: float, kerf: float,
+    min_part_length: float, min_part_width: float, min_confidence: float,
+    sheet_cost: float, currency: str, use_offcuts: bool,
+    user: User, db: Session,
+) -> dict:
+    """Validate a model file, store it as a new project and queue its job."""
     _validate_config(sheet_width, sheet_height, thickness, kerf,
                      min_part_length, min_part_width, min_confidence, sheet_cost)
 
@@ -402,8 +393,6 @@ async def create_project(
     if used >= MONTHLY_JOB_LIMIT:
         raise HTTPException(402, f"Monthly limit of {MONTHLY_JOB_LIMIT} jobs reached — upgrade to continue")
 
-    filename = file.filename or "model"
-    content = await file.read()
     if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"File is larger than {MAX_UPLOAD_MB:.0f} MB")
 
@@ -483,6 +472,75 @@ async def create_project(
     return {"project": _project_payload(project, db), "job_id": job.id}
 
 
+@router.post("/api/projects", status_code=201)
+async def create_project(
+    file: UploadFile = File(...),
+    name: str = Form("Untitled project"),
+    sheet_width: float = Form(2440.0),
+    sheet_height: float = Form(1220.0),
+    thickness: float = Form(18.0),
+    kerf: float = Form(3.0),
+    min_part_length: float = Form(50.0),
+    min_part_width: float = Form(50.0),
+    min_confidence: float = Form(0.6),
+    sheet_cost: float = Form(3500.0),
+    currency: str = Form("INR"),
+    use_offcuts: bool = Form(False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _create_project_from_content(
+        file.filename or "model", await file.read(), name,
+        sheet_width, sheet_height, thickness, kerf,
+        min_part_length, min_part_width, min_confidence,
+        sheet_cost, currency, use_offcuts, user, db,
+    )
+
+
+@router.post("/api/projects/describe", status_code=201)
+def create_project_from_description(
+    description: str = Form(...),
+    name: str = Form(""),
+    sheet_width: float = Form(2440.0),
+    sheet_height: float = Form(1220.0),
+    thickness: float = Form(18.0),
+    kerf: float = Form(3.0),
+    min_part_length: float = Form(50.0),
+    min_part_width: float = Form(50.0),
+    min_confidence: float = Form(0.6),
+    sheet_cost: float = Form(3500.0),
+    currency: str = Form("INR"),
+    use_offcuts: bool = Form(False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a project from a sentence. Panel sizes are computed in code from
+    carcass rules; the generated model then runs through the normal pipeline."""
+    from .. import ai as ai_module
+    from ..furniture import describe_to_model
+
+    if thickness <= 0:
+        raise HTTPException(422, "These values must be positive: thickness")
+    try:
+        model = describe_to_model(
+            description,
+            thickness=thickness,
+            llm_extract=ai_module.extract_furniture_params if ai_module.llm_available() else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    created = _create_project_from_content(
+        model["filename"], model["obj"].encode("utf-8"), name.strip() or model["title"],
+        sheet_width, sheet_height, thickness, kerf,
+        min_part_length, min_part_width, min_confidence,
+        sheet_cost, currency, use_offcuts, user, db,
+    )
+    created["notes"] = model["notes"]
+    created["parts"] = model["parts"]
+    return created
+
+
 @router.get("/api/projects")
 def list_projects(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     projects = (
@@ -520,3 +578,18 @@ def download_artifact(
     if not path.is_file():
         raise HTTPException(404, "File not found")
     return FileResponse(path, filename=path.name)
+
+
+# ---------------------------------------------------------------------------
+# Tools (stateless, per-user auth)
+# ---------------------------------------------------------------------------
+
+@router.post("/api/tools/linear")
+def linear_nesting(payload: dict, user: User = Depends(get_current_user)):
+    """1D nesting for timber, beading, pipe and profiles. See linear.py."""
+    from ..linear import plan_from_payload
+
+    try:
+        return plan_from_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc

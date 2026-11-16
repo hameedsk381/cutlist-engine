@@ -7,7 +7,7 @@ Core flows:
 
 AI flows (Groq):
   4. POST /api/ai/label      — auto-name parts from session context
-  5. POST /api/ai/describe   — natural language → cutlist + nesting
+  5. POST /api/describe      — description → generated 3D model (sizes computed in code)
   6. POST /api/ai/chat       — context-aware workshop assistant
 """
 from __future__ import annotations
@@ -65,6 +65,7 @@ from .outputs import (
     write_label_sheet_html,
     write_sheet_layout_html,
 )
+from .furniture import describe_to_model
 from .parsers import load_model
 from .pipeline import ProcessConfig, process_triangles
 from . import ai as ai_module
@@ -76,7 +77,7 @@ MAX_UPLOAD_BYTES = int(float(os.environ.get("CUTLIST_MAX_UPLOAD_MB", "500")) * 1
 MAX_TRIANGLES = int(os.environ.get("CUTLIST_MAX_TRIANGLES", "2000000"))
 SESSION_TTL_SECONDS = int(float(os.environ.get("CUTLIST_SESSION_TTL_HOURS", "168")) * 3600)
 API_TOKEN = os.environ.get("CUTLIST_API_TOKEN", "").strip()
-ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae"}
+ALLOWED_SUFFIXES = {".json", ".dxf", ".obj", ".stl", ".dae", ".glb", ".gltf"}
 
 
 @asynccontextmanager
@@ -116,13 +117,19 @@ _CHAT_HISTORY: dict[str, list[dict[str, str]]] = {}
 _SESSION_LOCKS: dict[str, threading.Lock] = {}
 
 
+# Routes that authenticate per user (JWT or API key) rather than with the
+# shared workshop token.
+_SAAS_PATHS = {"/api/projects", "/api/offcuts"}
+_SAAS_PREFIXES = ("/api/projects/", "/api/offcuts/", "/api/tools/")
+
+
 @app.middleware("http")
 async def _api_token_middleware(request: Request, call_next):
     path = request.url.path
     # The shared workshop token guards the legacy single-operator routes only.
-    # SaaS routes (/api/projects*) authenticate with per-user JWTs or API keys,
+    # SaaS routes authenticate with per-user JWTs or API keys,
     # so they must not be blocked here.
-    is_saas_route = path == "/api/projects" or path.startswith("/api/projects/")
+    is_saas_route = path in _SAAS_PATHS or path.startswith(_SAAS_PREFIXES)
     if API_TOKEN and path.startswith("/api/") and not is_saas_route:
         expected = f"Bearer {API_TOKEN}"
         if request.headers.get("authorization") != expected:
@@ -458,112 +465,43 @@ async def api_ai_label(payload: dict[str, Any]):
         raise HTTPException(status_code=500, detail=f"AI labeling failed: {e}")
 
 
-@app.post("/api/ai/describe")
-async def api_ai_describe(payload: dict[str, Any]):
-    """Convert natural language description to a cutlist, then nest it."""
-    description = payload.get("description", "").strip()
+@app.post("/api/describe")
+async def api_describe(payload: dict[str, Any]):
+    """Turn a furniture description into a 3D model file.
+
+    Sizes are computed in code from carcass rules (see furniture.py). The
+    returned OBJ is uploaded like any other model, so a described job gets the
+    same review step, DXF, G-code and labels as an uploaded one.
+    """
+    description = str(payload.get("description", "")).strip()
     if not description:
         raise HTTPException(status_code=400, detail="description is required")
-
     thickness = float(payload.get("thickness", 18.0))
-    sheet_width = float(payload.get("sheet_width", 2440.0))
-    sheet_height = float(payload.get("sheet_height", 1220.0))
-    kerf = float(payload.get("kerf", 3.0))
-    _validate_positive_values(
-        thickness=thickness,
-        sheet_width=sheet_width,
-        sheet_height=sheet_height,
-        kerf=kerf,
-    )
-
+    _validate_positive_values(thickness=thickness)
     try:
-        ai_result = ai_module.describe_to_cutlist(
+        return describe_to_model(
             description,
             thickness=thickness,
-            sheet_width=sheet_width,
-            sheet_height=sheet_height,
+            llm_extract=ai_module.extract_furniture_params if ai_module.llm_available() else None,
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI describe failed: {e}")
 
-    # Convert AI boards into Board objects and run through the nesting pipeline
-    from .models import Board, Vec2
 
-    boards = []
-    for idx, b in enumerate(ai_result.get("boards", []), start=1):
-        length = float(b["length"])
-        width = float(b["width"])
-        t = float(b.get("thickness", thickness))
-        qty = int(b.get("quantity", 1))
-        eb = b.get("edge_band", [0, 0, 0, 0])
-        edge_band = tuple(float(x) for x in (eb + [0, 0, 0, 0])[:4])
+@app.post("/api/linear")
+async def api_linear(payload: dict[str, Any]):
+    """1D nesting: cut a list of lengths (timber, beading, pipe) from stock bars.
 
-        for q in range(qty):
-            board = Board(
-                id=f"ai_{idx:03d}" + (f"_{q+1}" if qty > 1 else ""),
-                length=length,
-                width=width,
-                thickness=t,
-                area=(length * width) / 1_000_000.0,
-                contour=(
-                    Vec2(0, 0), Vec2(length, 0),
-                    Vec2(length, width), Vec2(0, width),
-                ),
-                source_planes=("ai", "ai"),
-                confidence=1.0,
-                grain_locked=bool(b.get("grain_locked", False)),
-                material=str(b.get("material", "default")),
-                priority=str(b.get("priority", "normal")),
-                edge_band=edge_band,
-                label=str(b.get("label", f"Part {idx}")),
-            )
-            boards.append(board)
-
-    if not boards:
-        raise HTTPException(status_code=422, detail="AI generated no boards from that description")
-
-    # Nest using the standard pipeline nesting
-    from .boards import build_cutlist
-    from .nesting import optimize_cutting_layout
-
-    cutlist = build_cutlist(boards, tolerance=0.5)
+    Body: {"pieces": [{"label", "length", "quantity"}], "stock_length": mm,
+           "kerf"?, "end_trim"?, "leftovers"?: [mm], "stock_cost"?, "min_reusable_leftover"?}
+    Signed-in users and API keys use /api/tools/linear instead.
+    """
+    from .linear import plan_from_payload
 
     try:
-        layout = optimize_cutting_layout(
-            boards,
-            sheet_width=sheet_width,
-            sheet_height=sheet_height,
-            kerf=kerf,
-        )
+        return plan_from_payload(payload)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=f"Nesting failed: {e}")
-
-    sheets = layout.sheets
-    total_area = sum(s.width * s.height for s in sheets)
-    used_area = sum(s.used_area for s in sheets)
-    waste_pct = ((total_area - used_area) / total_area * 100.0) if total_area else 0.0
-
-    return {
-        "ai_notes": ai_result.get("notes", ""),
-        "material_name": ai_result.get("material_name", "Plywood"),
-        "boards": [_board_payload(b) for b in boards],
-        "cutlist": [asdict(c) for c in cutlist],
-        "sheets": [_sheet_payload(s) for s in sheets],
-        "material_summary": {
-            "sheet_count": len(sheets),
-            "waste_percent": round(waste_pct, 2),
-            "utilization_percent": round(100 - waste_pct, 2),
-            "reusable_offcut_area": round(
-                sum(o.area for s in sheets for o in s.offcuts if o.reusable), 4
-            ),
-            "total_material_cost": 0.0,
-            "currency": "USD",
-        },
-    }
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @app.post("/api/ai/chat")

@@ -14,10 +14,15 @@
 
 require 'sketchup.rb'
 require 'extensions.rb'
+require 'net/http'
+require 'uri'
+require 'json'
+require 'tmpdir'
 
 module CutlistEngine
   PLUGIN_NAME    = 'Cutlist Engine'.freeze
-  PLUGIN_VERSION = '1.0.0'.freeze
+  PLUGIN_VERSION = '1.1.0'.freeze
+  PREFS          = 'CutlistEngine'.freeze
 
   module_function
 
@@ -104,6 +109,75 @@ module CutlistEngine
   end
 
   # ---------------------------------------------------------------------------
+  # Send to a CutList server (hosted or self-hosted) with an API key
+  # ---------------------------------------------------------------------------
+
+  def server_url
+    Sketchup.read_default(PREFS, 'server_url', '').to_s.sub(%r{/+\z}, '')
+  end
+
+  def api_key
+    Sketchup.read_default(PREFS, 'api_key', '').to_s
+  end
+
+  # Ask for the server address and API key. Returns true when both are set.
+  def menu_action_settings
+    answers = UI.inputbox(
+      ['Server address', 'API key'],
+      [server_url.empty? ? 'http://localhost:8000' : server_url, api_key],
+      'CutList connection'
+    )
+    return false unless answers
+    Sketchup.write_default(PREFS, 'server_url', answers[0].to_s.strip.sub(%r{/+\z}, ''))
+    Sketchup.write_default(PREFS, 'api_key', answers[1].to_s.strip)
+    !server_url.empty? && !api_key.empty?
+  end
+
+  # POST the OBJ as a new project. Returns [ok, message_or_project_hash].
+  def upload_project(obj_path, name, server, key)
+    uri = URI.parse("#{server}/api/projects")
+    request = Net::HTTP::Post.new(uri)
+    request['Authorization'] = "Bearer #{key}"
+    File.open(obj_path, 'rb') do |file|
+      request.set_form(
+        [['name', name], ['file', file, { filename: File.basename(obj_path), content_type: 'text/plain' }]],
+        'multipart/form-data'
+      )
+      response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https',
+                                                     open_timeout: 15, read_timeout: 120) do |http|
+        http.request(request)
+      end
+      body = begin
+        JSON.parse(response.body.to_s)
+      rescue JSON::ParserError
+        {}
+      end
+      return [true, body['project'] || {}] if response.code.to_i == 201
+      detail = body['detail'].is_a?(String) ? body['detail'] : "The server answered #{response.code}."
+      detail = 'The API key was not accepted. Check it under CutList connection.' if response.code.to_i == 401
+      return [false, detail]
+    end
+  rescue StandardError => e
+    [false, "Could not reach #{server} (#{e.class}: #{e.message})."]
+  end
+
+  def menu_action_send
+    return unless (!server_url.empty? && !api_key.empty?) || menu_action_settings
+    model = Sketchup.active_model
+    name = model.title.to_s.empty? ? 'SketchUp model' : model.title
+    obj_path = File.join(Dir.tmpdir, "cutlist_#{Time.now.to_i}.obj")
+    export_to_obj(obj_path)
+    ok, result = upload_project(obj_path, name, server_url, api_key)
+    File.delete(obj_path) if File.exist?(obj_path)
+    if ok
+      UI.messagebox("Sent \"#{name}\" to CutList. Your browser will open so you can check the parts.")
+      UI.openURL(server_url)
+    else
+      UI.messagebox("Could not send to CutList.\n\n#{result}")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # UI wiring
   # ---------------------------------------------------------------------------
 
@@ -127,6 +201,9 @@ module CutlistEngine
 
   unless file_loaded?(__FILE__)
     menu = UI.menu('Extensions').add_submenu(PLUGIN_NAME)
+    menu.add_item('Send to CutList')                      { menu_action_send }
+    menu.add_item('CutList connection...')                { menu_action_settings }
+    menu.add_separator
     menu.add_item('Export selection to OBJ for cutlist') { menu_action_export }
     menu.add_item('Export and run cutlist-engine')        { menu_action_export_and_run }
     file_loaded(__FILE__)

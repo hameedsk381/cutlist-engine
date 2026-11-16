@@ -11,7 +11,7 @@ import type { FinalizeResult, ProcessResult, Sheet } from '../types';
 interface Props {
   result: ProcessResult;
   finalized: FinalizeResult | null;
-  fromDescription: boolean;
+  designNotes?: string[];
   onBackToParts?: () => void;
   onForce: () => void;
   error: string | null;
@@ -31,7 +31,7 @@ function plain(issue: string): string | null {
   return issue;
 }
 
-export default function Dashboard({ result, finalized, fromDescription, onBackToParts, onForce, error }: Props) {
+export default function Dashboard({ result, finalized, designNotes = [], onBackToParts, onForce, error }: Props) {
   const [sheetIndex, setSheetIndex] = useState(0);
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
 
@@ -134,11 +134,13 @@ export default function Dashboard({ result, finalized, fromDescription, onBackTo
       </div>
 
       <div className="stack">
-        {fromDescription && (
-          <div className="notice notice-warn">
-            <TriangleAlert size={22} />
-            <div><strong>These sizes are an AI estimate from your description.</strong> Check every part against your own measurements before cutting.</div>
-          </div>
+        {designNotes.length > 0 && (
+          <details className="more">
+            <summary><ChevronRight size={18} /> How these sizes were worked out</summary>
+            <div className="notice notice-info" style={{ marginTop: 8 }}>
+              <div><ul style={{ marginTop: 0 }}>{designNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>
+            </div>
+          </details>
         )}
         {error && <div className="notice notice-danger" role="alert"><TriangleAlert size={20} /><div>{error}</div></div>}
         {offcutSheets.length > 0 && (
